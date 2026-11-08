@@ -1,0 +1,50 @@
+{
+  "summary": "Full backend (29 pytest cases, real Neon Postgres via public URL) + frontend E2E (Playwright desktop/mobile/tablet) of ICEPOPS shop + seller dashboard. Nearly everything works: signup/login/logout, menu/category/search/add-to-cart, product detail, cart quote (first-order, SCOOP10 incl. min/max cap, free delivery threshold, stacking on/off, Wednesday BOGO via temp weekday override), checkout (zone PIN validation blocks 400001, payment methods by fulfilment, online disabled), idempotency, concurrent first-order (3 parallel → only 1 discounted), inventory decrement/restore (verified in DB), cancel restores first-order eligibility, order isolation (404/401), admin transitions incl. invalid ones (400), reject needs reason, record payment, refund only if paid, audit log, promotions UI save, non-admin 403 / redirect, CSRF 403, forgot/reset. Failures: per-email login lockout does not block a correct password; PUT /api/cart race → 500; minor UI issues.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "Per-email brute-force lockout is ineffective: rate_limit('login-fail:<email>') is only evaluated AFTER a wrong password. After 5 failures the 6th wrong attempt returns 429, but a CORRECT password still returns 200 during the lockout window, so an attacker just keeps guessing and the right guess succeeds (only the 20/15min per-IP limit applies). Fix: check the per-email counter before verifying the password (e.g. peek count >=5 → 429 for any attempt), and only append on failure.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "PUT /api/cart", "issue": "Race condition → 500 Internal Server Error (IntegrityError carts_user_id_key / uq_cart_variant) seen 4x in backend.err.log. Two concurrent PUTs for same user both try to create the Cart row / insert the same cart_items. Root cause on frontend: CartContext.jsx line 43-46 calls api.put('/cart') INSIDE a setItems updater function (React StrictMode double-invokes updaters → 2 parallel PUTs), plus debounced persist overlapping. Fix backend with INSERT ... ON CONFLICT / SELECT ... FOR UPDATE on cart (or catch IntegrityError and retry) and move the side effect out of the setState updater."},
+      {"endpoint": "POST /api/orders", "issue": "If a one-time offer was consumed by a parallel checkout, the second order is silently placed at full price (quote shown to the user had the discount). Consider rejecting with 409 when the computed total differs from a client-supplied expected_total so the customer can review."},
+      {"endpoint": "GET /api/admin/orders/{n} allowed_transitions", "issue": "For a cancelled UNPAID order allowed_transitions includes 'refund_pending', so the UI shows 'Start refund' which then fails with 400. Filter refund_pending when payment_status != 'paid'."},
+      {"endpoint": "Emergent email", "issue": "All order emails during testing were recorded 'failed: rate_limited' (Emergent email API returned 429 after ~13 accepted sends). Not an app bug (high test volume), but no retry exists — consider a retry/backoff for outbox rows."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Navbar unread badge", "issue": "After clicking 'Mark all read' on /notifications the bell badge still shows the old count (6) until the 30s poll; Notifications page doesn't refresh the navbar unread state.", "selector": "[data-testid='nav-unread-count']", "priority": "LOW"},
+      {"component": "AdminOrders side sheet", "issue": "'Start refund' button shown for cancelled orders with payment 'Not charged' (backend rejects).", "selector": "[data-testid='admin-action-refund_pending']", "priority": "LOW"},
+      {"component": "Route change scroll", "issue": "After Place order, /orders/<n>?placed=1 opened scrolled to the bottom (scroll position kept from checkout); the placed banner/timeline is off-screen. Add scroll-to-top on navigation.", "selector": "[data-testid='order-placed-banner']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Checkout preferred time", "issues": ["Uses native <input type=datetime-local> instead of a shadcn date/time picker"]},
+      {"screen": "Cart coupon", "issues": ["When coupon is invalid (min order not met) the button still says 'Remove' and the input stays filled — fine, but the error could be clearer about the current eligible amount"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_icepops_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "HIGH: Fix per-email login lockout so correct password is also rejected while locked (routes/auth.py login)",
+    "Fix PUT /api/cart concurrency 500 (upsert/lock + move api.put out of setItems updater in CartContext.jsx)",
+    "Scroll to top on route change (order detail after placing order)",
+    "Refresh navbar unread count after 'Mark all read'",
+    "Hide/omit refund_pending transition for unpaid orders",
+    "Optional: replace native datetime-local with shadcn picker; consider email retry on 429"
+  ],
+  "critical_code_review_comments": [
+    "core/security.py rate_limit is in-memory per process — resets on restart and not shared across workers; fine for single worker MVP but document/move to DB/redis for production",
+    "rate_limit for orders is applied before the idempotency check, so legitimate retries of the same key consume the order quota",
+    "routes/auth.py login: login-ip limit counts successful logins too (20/15min per IP) — shared NAT/office IPs or a busy admin could get locked",
+    "CartContext.jsx: side effect (api.put) inside a state updater function is an anti-pattern (double-invoked under StrictMode)",
+    "Tests must be run with -n 0 (classes share module fixtures/STATE)"
+  ],
+  "updated_files": ["/app/backend/tests/test_icepops_api.py"],
+  "success_rate": {"backend": "97% (28/29; only login lockout test fails)", "frontend": "~92% (all flows work; 3 minor UI bugs)"},
+  "test_credentials": "Admin from backend process env ADMIN_EMAIL/ADMIN_PASSWORD (not in .env file; test reads /proc/<uvicorn pid>/environ). Customers created: test_a_/test_b_/test_c_/test_d_<run>@example.com and test_ui_06ca73@example.com (password Test@12345).",
+  "seed_data_creation": "Created TEST_ customers (above) and TEST orders (all now cancelled/delivered/refunded; none left pending). No user/order delete endpoint exists, so these test records remain in the DB. Promotions/stacking restored: wednesday_bogo weekdays [2], stacking false, first_order 5000, free_delivery 10000. Smoke order IP261107-D3376D untouched (still 'accepted').",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && pytest tests/test_icepops_api.py -n 0 -v. Watch rate limits: login 20/15min per IP (all tests share one IP), register 10/hour per IP, forgot-password 5/15min, orders 10/10min per user. Store hours 11:00-22:30 IST — tests use preferred_time tomorrow 12:00 IST. Emergent email returned 429 during heavy testing. Inventory verified read-only via asyncpg on DATABASE_URL (from backend process env).",
+  "rca of the issue": "Login lockout: routes/auth.py line 100-102 calls rate_limit('login-fail:'+email) only in the failure branch, so success path never checks the counter. Repro: 5 wrong logins → 6th wrong = 429 → correct password = 200. Cart 500: concurrent PUT /api/cart for same user; select-then-insert Cart and delete-then-insert CartItems are not serialized → unique violations; triggered by CartContext login merge firing duplicate PUTs."
+}

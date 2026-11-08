@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 32 100% 97%;
+        --foreground: 22 51% 16%;
+        --card: 0 0% 100%;
+        --card-foreground: 22 51% 16%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 22 51% 16%;
+        --primary: 22 51% 16%;
+        --primary-foreground: 32 100% 97%;
+        --secondary: 339 100% 95%;
+        --secondary-foreground: 12 81% 50%;
+        --muted: 30 52% 92%;
+        --muted-foreground: 26 15% 42%;
+        --accent: 33 100% 95%;
+        --accent-foreground: 22 51% 16%;
+        --destructive: 12 81% 50%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 26 44% 87%;
+        --input: 26 44% 87%;
+        --ring: 339 87% 81%;
+        --radius: 1rem;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body {
+        @apply bg-background text-foreground antialiased;
+        font-family: "Plus Jakarta Sans", "Noto Sans Telugu", sans-serif;
+    }
+    h1, h2, h3, h4, .font-display {
+        font-family: "Outfit", "Ramabhadra", "Noto Sans Telugu", sans-serif;
+    }
+    html[lang="te"] body {
+        font-family: "Noto Sans Telugu", "Plus Jakarta Sans", sans-serif;
+        line-height: 1.7;
+    }
+    html[lang="te"] h1, html[lang="te"] h2, html[lang="te"] h3, html[lang="te"] h4, html[lang="te"] .font-display {
+        font-family: "Ramabhadra", "Noto Sans Telugu", sans-serif;
+        letter-spacing: 0;
+        font-weight: 400;
+        line-height: 1.35;
+    }
+    ::selection { background: #F8A5C2; color: #3D2314; }
+}
+
+.grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.animate-floaty { animation: floaty 5s ease-in-out infinite; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.6s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes stamp-pop { 0% { transform: scale(0.3); opacity: 0; } 70% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+.stamp-pop { animation: stamp-pop 0.45s cubic-bezier(.2,.7,.2,1) both; }
+
+.print-only { display: none; }
+@media print {
+    body * { visibility: hidden; }
+    .print-only, .print-only * { visibility: visible; }
+    .print-only { display: block; position: absolute; left: 0; top: 0; width: 80mm; font-family: monospace; font-size: 12px; color: #000; }
+}
+
+[data-debug-wrapper="true"] { display: contents !important; }

@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 4 tests (seller tools + Reorder). Backend: a new pytest suite with 29 tests passes 29/29: upload/serve, categories, products CRUD with stock and visibility, delete 409, coupons (dup 409, inactive, expired, category limits, redemptions, used_count), settings, map validation, temporarily-closed checkout block, hours, holidays, zones, policies, testimonials, logo, audit, admin 401/403, CSRF. Frontend (Playwright on the public URL): admin products, coupons, settings tabs, logo in navbar, testimonials on home, policy page, audit page and the customer Reorder flow were all checked by hand. One HIGH frontend bug: Reorder only adds the LAST line of a multi-item order to the cart. Owner settings were restored exactly; seed product 1 was accidentally deleted by the tester and then restored with its original ids (see seed_data_creation).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/admin/settings, POST /api/admin/zones, POST /api/admin/products", "issue": "Pydantic validator errors (bad map link, bad logo URL, 5-digit PIN, bad image_url) return 422, not 400. There is no RequestValidationError handler. The UI message is still correct because errMsg strips 'Value error,'."},
+      {"endpoint": "POST /api/admin/uploads", "issue": "Store logos are saved under the icepops/products/ path. Cosmetic: a separate logos/ prefix would be better."},
+      {"endpoint": "DELETE /api/admin/holidays/{id}, DELETE /api/admin/zones/{id}", "issue": "The audit target is only the numeric id, not the date or PIN, so the audit log entry is hard to read."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ReorderButton + CartContext.add", "issue": "Reorder of an order with several lines adds only the last line. Reproduced: order IP261107-A4EF62 had 2x Strawberry Cheesecake Cone and 1x Kala Khatta Ice; after Reorder the cart held only 2x Strawberry Cone. Cause: order.items.forEach(i => add(...)) calls add/setQty, which read `items` from the render closure. Each call rebuilds the list from the same stale array and overwrites the previous one.", "selector": "[data-testid^='reorder-']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Settings > Business", "issues": ["No way to remove or clear an uploaded logo (ImageUpload only has 'Change image'). logo_url can only be reset through the API.", "Unticking 'Temporarily closed' hides the message input but keeps the old closure_message saved (harmless but stale)."]},
+      {"screen": "Admin Coupons card", "issues": ["Expiry text 'expires 31 Dec, 11:30 pm' leaves out the year. Confusing when the expiry is next year."]},
+      {"screen": "Admin Hours/Holidays/Coupons", "issues": ["Uses the browser's built-in date, time and datetime-local pickers instead of the shadcn Calendar/Popover component."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_phase4_seller_tools.py", "/app/test_reports/pytest/pytest_phase4.xml", "/app/backend/tests/snapshot_settings.py", "/app/backend/tests/diff_snapshots.py", "/app/backend/tests/p4_helpers.py", "/app/backend/tests/db_inspect.py"],
+  "action_items": [
+    "HIGH: Fix the Reorder multi-item bug. Add addMany(lines) to CartContext using a functional setItems(prev => ...) merge, then call persist once. Or change setQty/add to functional updates. ReorderButton should then call addMany(order.items).",
+    "Add a 'Remove logo' button to the Business tab (set logo_url null). Optionally add a Remove button to the product image too.",
+    "Optional: map RequestValidationError to 400 if a 400 contract is wanted; show the year in the coupon expiry; clear closure_message when reopening; use shadcn date pickers."
+  ],
+  "critical_code_review_comments": [
+    "CartContext add/setQty use the stale `items` closure, so several updates in one tick lose data. This is the root cause of the Reorder bug and would hit any batch add.",
+    "DELETE /admin/products relies only on the order_items check. It hard-deletes seed products with no orders (cascades cart_items and inventory_movements) after a single window.confirm. Consider soft-delete or a stronger confirmation for products that have movement history.",
+    "_apply_variants deactivates removed variants instead of deleting them. Good for order history.",
+    "Coupon IST handling in the UI is correct ('+05:30' is appended and shown back in IST).",
+    "Upload checks the content-type, magic bytes and the 5MB limit. /api/files is served only for registered UploadedFile rows. Good."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase4_seller_tools.py", "/app/backend/tests/snapshot_settings.py", "/app/backend/tests/diff_snapshots.py", "/app/backend/tests/p4_helpers.py", "/app/backend/tests/db_inspect.py"],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "~92% (all seller-tool flows work; Reorder loses items for multi-line orders)"},
+  "seed_data_creation": "Created and left in place (all inactive or hidden): categories TEST_Cat D66A56 / 37E256 / UI69146 (hidden), products TEST_Pop D66A56 / 37E256 (hidden; they have cancelled test orders, so they cannot be deleted), coupons TESTD66A56 / TEST37E256 / TESTUI69146 (inactive), customers test_p4_d66a56@example.com and test_p4_37e256@example.com (password Test@12345). Their orders were cancelled and the cart cleared. INCIDENT: while checking the 409 path in the UI, the tester deleted seed product 'Raspberry Ripple Pop' (id 1). It had no past orders because the DB has only test orders, so the app correctly allowed the delete. It was restored right away with SQL using the original ids and values (product 1, variant 1, inventory id 1, price 5000, stock 100, image /images/cream-1.jpg). The inventory_movements history and any cart_items for variant 1 were lost in the cascade. After the restore, a real user (manojkumarbondada123@gmail.com) placed order IP261107-632277, so variant 1 stock is now 99 and variant 2 stock is 98. That is real usage, not test changes. All settings, hours, zones 500001-500003, policies, testimonials (empty), logo_url null, closure flag and message are back to baseline (verified by snapshot diff).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && pytest tests/test_phase4_seller_tools.py -n 0 -v. It snapshots the settings and restores them in the module teardown. Use snapshot_settings.py <out.json> before and after, plus diff_snapshots.py a.json b.json, to verify restoration. Creating files in /app/backend/tests triggers a backend hot reload (wait about 4s). NEVER click product-delete on seed products in the UI: no seed product has orders, so it really deletes. After the Reorder fix, retest by placing a 2-line order for a TEST customer (p4_helpers.py order <email>), clicking reorder-<number>, checking that both lines are in /cart, then cancelling.",
+  "rca of the issue": "Reorder: ReorderButton calls add(variant_id, qty) for each item in one event handler. add() → setQty() computes `rest = items.filter(...)` from the render-time `items`, then persist(next) → setItems(next). Each call replaces state with stale items plus one line, so only the last call survives. Repro: an order with 2+ distinct variants → Reorder → the cart has only the last variant. Fix: a functional update (setItems(prev => merge(prev, lines))) with a single debounced PUT /cart."
+}

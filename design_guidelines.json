@@ -1,0 +1,129 @@
+{
+  "project_name": "ICEPOPS",
+  "app_type": "e-commerce + admin dashboard",
+  "locale": {
+    "currency": "INR",
+    "currency_symbol": "₹",
+    "timezone": "Asia/Kolkata"
+  },
+  "theme_strategy": {
+    "default_mode": "light",
+    "toggle_supported": true,
+    "archetype": "ORGANIC & PASTEL PLAY",
+    "description": "Warm cream background with pastel strawberry pink, rich chocolate brown accents, and vibrant fruit pops. Delivers a mouthwatering, cheerful, artisanal dessert boutique feel."
+  },
+  "typography": {
+    "headline_font": "Outfit, sans-serif",
+    "body_font": "Plus Jakarta Sans, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "font_imports_url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-semibold",
+      "body": "text-base leading-relaxed",
+      "caption": "text-xs font-medium uppercase tracking-wider"
+    }
+  },
+  "colors": {
+    "brand": {
+      "cream_bg": "#FFF8F0",
+      "cream_surface": "#FFF3E4",
+      "pastel_pink": "#F8A5C2",
+      "pink_light": "#FFE3ED",
+      "chocolate_brown": "#3D2314",
+      "chocolate_light": "#5C3A24",
+      "strawberry_red": "#E84118",
+      "mango_orange": "#FA8231",
+      "pistachio_green": "#20BF6B",
+      "blueberry_purple": "#8854D0"
+    },
+    "light_mode": {
+      "background": "#FFF8F0",
+      "foreground": "#3D2314",
+      "card": "#FFFFFF",
+      "card_foreground": "#3D2314",
+      "primary": "#3D2314",
+      "primary_foreground": "#FFF8F0",
+      "secondary": "#FFE3ED",
+      "secondary_foreground": "#E84118",
+      "accent": "#FFF3E4",
+      "accent_foreground": "#3D2314",
+      "muted": "#F5EADF",
+      "muted_foreground": "#7A685A",
+      "border": "#EBDCD0",
+      "ring": "#F8A5C2"
+    },
+    "dark_mode": {
+      "background": "#1E120B",
+      "foreground": "#FFF8F0",
+      "card": "#2A1A10",
+      "card_foreground": "#FFF8F0",
+      "primary": "#F8A5C2",
+      "primary_foreground": "#1E120B",
+      "secondary": "#3D2314",
+      "secondary_foreground": "#FFE3ED",
+      "accent": "#352217",
+      "accent_foreground": "#FFF8F0",
+      "muted": "#2C1D14",
+      "muted_foreground": "#B3A093",
+      "border": "#473123",
+      "ring": "#F8A5C2"
+    }
+  },
+  "visual_enhancers": {
+    "card_style": "Rounded-3xl borders (rounded-3xl) with soft ambient shadow (shadow-sm hover:shadow-xl), 1px warm border, smooth hover lift (-translate-y-1)",
+    "glassmorphism": "backdrop-blur-md bg-white/80 dark:bg-black/70 border border-white/30 dark:border-white/10",
+    "badges": "Pill-shaped (rounded-full) with vibrant fruit-tinted backgrounds and dark text",
+    "promotional_banners": "Warm gradient backgrounds (from-amber-100 via-pink-100 to-rose-200) with bold chocolate typography, micro-ribbon tags, and clear CTA buttons"
+  },
+  "layouts": {
+    "customer": {
+      "header": "Sticky glassmorphism navigation with brand logo, nav links (Home, Menu, Offers, About, Track Order), search/filter toggle, notification bell, cart counter badge, and profile menu.",
+      "hero": "Asymmetric hero with split layout: left side with high-impact display title ('Handcrafted Artisanal Pops & Scoops'), offer badge ('Wednesday 2+1 Free'), and dual CTAs ('Explore Menu', 'Order Now'); right side with floating ice cream product showcase with decorative floating fruit badges.",
+      "promotions_strip": "High-visibility promo cards grid featuring Wednesday Buy 2 Get 1 Free, First order > ₹50 free pop, and Free delivery above ₹100.",
+      "menu_page": "Category tab pills (Cream-based popsicles, Water-based popsicles, Cups & Cones, Scoops, Shakes, Sundaes & Desserts), search bar, allergen filter toggles, grid of interactive product cards.",
+      "cart_drawer": "Slide-over drawer + full cart page with quantity adjustments, inline coupon code field, automatic discount calculator, free delivery progress bar ('Add ₹25 more for FREE Delivery'), breakdown of items, tax, delivery fee, and final payable INR total.",
+      "checkout": "Streamlined single-page or two-step checkout with delivery/pickup toggle, PIN code coverage validator, saved address selector, delivery instructions, time slot picker, payment method with simulated 'Online Payment Pending' state and Cash on Delivery.",
+      "order_tracking": "Interactive visual status timeline: Pending confirmation -> Accepted -> Preparing -> Ready for pickup / Out for delivery -> Delivered. Live status updates badge and order summary."
+    },
+    "admin": {
+      "sidebar": "Fixed left navigation sidebar with dark chocolate background, brand mark, navigation items (Overview, Orders, Menu Management, Inventory, Coupons, Promotions, Business Settings, Audit Log).",
+      "dashboard_grid": "Bento high-density grid featuring today's order counters, live sales in ₹, pending orders alert table with auto-refresh toggle, top bestsellers, and monthly revenue chart.",
+      "order_management": "Filterable table with real-time status buttons (Accept, Reject, Mark Preparing, Ready, Out for Delivery, Complete, Refund), modal detail view, order item list, print receipt generator.",
+      "product_crud": "Grid/List switcher with image upload preview, variant builder (Flavours, Sizes), price input in ₹, stock counter, allergen checkboxes, and instant active toggle."
+    }
+  },
+  "image_urls": {
+    "hero": "https://images.unsplash.com/photo-1629385697093-57be2cc97fa6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwyfHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85",
+    "popsicles_cream": "https://images.unsplash.com/photo-1705103654884-cbd03d95761a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHw0fHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85",
+    "popsicles_water": "https://images.unsplash.com/photo-1705103654884-cbd03d95761a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHw0fHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85",
+    "cups_and_cones": "https://images.unsplash.com/photo-1718810125230-e8e2271354f5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwxfHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85",
+    "scoops": "https://images.unsplash.com/photo-1646321155308-96c1b84e4685?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85",
+    "sundaes": "https://images.unsplash.com/photo-1629385697093-57be2cc97fa6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwyfHxpY2UlMjBjcmVhbSUyMHN1bmRhZSUyMGNvbmUlMjBzY29vcCUyMGRlc3NlcnR8ZW58MHx8fHwxNzk0MDY2MzUwfDA&ixlib=rb-4.1.0&q=85"
+  },
+  "testing_and_attributes": {
+    "rule": "Every interactive and key informational element MUST have a data-testid attribute in kebab-case format.",
+    "examples": [
+      "data-testid=\"nav-logo\"",
+      "data-testid=\"nav-cart-button\"",
+      "data-testid=\"menu-category-popsicles\"",
+      "data-testid=\"product-card-1\"",
+      "data-testid=\"add-to-cart-button-1\"",
+      "data-testid=\"cart-checkout-button\"",
+      "data-testid=\"checkout-submit-button\"",
+      "data-testid=\"order-status-timeline\"",
+      "data-testid=\"admin-sidebar-orders\"",
+      "data-testid=\"admin-accept-order-button-101\""
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Implement JS/JSX frontend files (not TSX). Ensure all imports map to .js or .jsx components.",
+    "Use Lucide-react for icons and Framer Motion for smooth lightweight animations.",
+    "Ensure all prices display in INR (₹) and timestamps use Asia/Kolkata context.",
+    "Use Sonner for toasts (located in /app/frontend/src/components/ui/sonner.js or jsx).",
+    "Keep header nav sticky with non-transparent background / backdrop blur.",
+    "Ensure full admin panel functionality at /admin path with complete management tools."
+  ]
+}
