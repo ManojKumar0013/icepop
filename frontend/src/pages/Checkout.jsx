@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { CheckCircle2, Loader2, Lock, ShieldCheck, Wallet } from "lucide-react";
+import { CheckCircle2, Gift, Loader2, Lock, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, newKey } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -54,8 +54,20 @@ export default function Checkout() {
   const [error, setError] = useState("");
   const idem = useRef(newKey());
   const coupon = sessionStorage.getItem("icepops_coupon") || "";
+  const [tipPaise, setTipPaise] = useState(0);
+  const [isCustomTip, setIsCustomTip] = useState(false);
+  const [customTip, setCustomTip] = useState("");
+  const [referral, setReferral] = useState(() => localStorage.getItem("icepops_referral") || "");
+  const [referralInput, setReferralInput] = useState("");
   const [useReward, setUseReward] = useRewardChoice();
-  const { quote: q, loading } = useQuote({ coupon, fulfilment, useReward, pincode: fulfilment === "delivery" ? addr.pincode : "" });
+  const { quote: q, loading } = useQuote({
+    coupon,
+    fulfilment,
+    useReward,
+    pincode: fulfilment === "delivery" ? addr.pincode : "",
+    tip_paise: tipPaise,
+    referral_code: referral,
+  });
 
   useEffect(() => {
     if (user) {
@@ -122,6 +134,8 @@ export default function Checkout() {
         idempotency_key: idem.current,
         expected_total_paise: payableTotal > 0 ? payableTotal : q.total_paise,
         use_loyalty_reward: useReward,
+        tip_paise: tipPaise,
+        referral_code: referral || null,
       });
       if (data.token) {
         localStorage.setItem("icepops_token", data.token);
@@ -132,6 +146,7 @@ export default function Checkout() {
       clear();
       sessionStorage.removeItem("icepops_coupon");
       sessionStorage.removeItem("icepops_use_reward");
+      localStorage.removeItem("icepops_referral");
       toast.success(
         effectiveMethod === "wallet"
           ? "Paid with ICEPOPS Wallet! Order confirmed."
@@ -220,7 +235,85 @@ export default function Checkout() {
               <textarea id="instr" rows={2} maxLength={300} data-testid="checkout-instructions" className={inputCls} value={addr.delivery_instructions} onChange={set(setAddr, "delivery_instructions")} />
             </Field>
           </Section>
-          <Section n={fulfilment === "delivery" ? "5" : "4"} title="Payment">
+          {fulfilment === "delivery" && (
+            <Section n="5" title="Delivery Partner Tip">
+              <div className="rounded-2xl bg-amber-50/70 border border-amber-200/80 p-4">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-500 text-white font-bold shadow-sm text-lg">
+                    ☀️
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sm font-extrabold text-choco">
+                      Support Your Delivery Partner
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      100% of your tip goes directly to your rider navigating hot afternoons.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {[
+                    { label: "No tip", val: 0 },
+                    { label: "₹10 😊", val: 1000 },
+                    { label: "₹20 🥤", val: 2000 },
+                    { label: "₹30 🦸", val: 3000 },
+                  ].map((pill) => {
+                    const isSelected = tipPaise === pill.val && !isCustomTip;
+                    return (
+                      <button
+                        key={pill.val}
+                        type="button"
+                        onClick={() => {
+                          setTipPaise(pill.val);
+                          setIsCustomTip(false);
+                        }}
+                        className={`rounded-full px-4 py-1.5 text-xs font-bold border transition-all ${
+                          isSelected
+                            ? "border-choco bg-choco text-cream shadow-xs"
+                            : "border-border bg-white text-choco hover:border-choco/60"
+                        }`}
+                      >
+                        {pill.label}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomTip(true)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-bold border transition-all ${
+                      isCustomTip
+                        ? "border-choco bg-choco text-cream shadow-xs"
+                        : "border-border bg-white text-choco hover:border-choco/60"
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+
+                {isCustomTip && (
+                  <div className="mt-3 flex items-center gap-2 max-w-xs">
+                    <span className="text-sm font-bold text-choco">₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={customTip}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseInt(e.target.value) || 0);
+                        setCustomTip(e.target.value);
+                        setTipPaise(val * 100);
+                      }}
+                      placeholder="Enter tip (e.g. 15, 50)"
+                      className="w-full rounded-xl border border-border bg-white px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-pink font-semibold"
+                    />
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+          <Section n={fulfilment === "delivery" ? "6" : "4"} title="Payment">
             {/* Wallet Balance Card */}
             {user && (
               <div className="mb-5 rounded-2xl bg-gradient-to-r from-amber-50/90 via-orange-50/50 to-pink-light/30 border border-amber-200/80 p-4 shadow-sm">

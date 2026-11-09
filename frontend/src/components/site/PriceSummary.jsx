@@ -25,6 +25,9 @@ export const PriceSummary = ({ q, fulfilment, walletDeducted = 0 }) => {
         <Row label={t("Delivery fee")} testid="summary-delivery-fee"
           value={q.delivery_savings_paise ? <><s className="mr-1.5 text-muted-foreground">{inr(q.delivery_savings_paise)}</s><span className="text-pistachio">{t("FREE")}</span></> : inr(q.delivery_fee_paise)} />
       ) : <Row label={t("Pickup")} value={t("Free")} testid="summary-pickup" />}
+      {q.tip_paise > 0 && (
+        <Row label={`❤️ ${t("Delivery Partner Tip")}`} value={`+ ${inr(q.tip_paise)}`} testid="summary-tip" className="text-amber-800 font-semibold" />
+      )}
       {effectiveWallet > 0 && (
         <Row label={t("ICEPOPS Wallet applied")} value={`− ${inr(effectiveWallet)}`} testid="summary-wallet-deduction" className="text-emerald-700 font-semibold" />
       )}

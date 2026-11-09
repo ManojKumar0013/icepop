@@ -4,6 +4,7 @@ import { ArrowRight, Clock, IceCreamCone, MapPin, Phone, Sparkles, Truck, Gift, 
 import { api } from "@/lib/api";
 import { useStore } from "@/context/StoreContext";
 import { ProductCard } from "@/components/site/ProductCard";
+import { AutoIceCreamSlider } from "@/components/site/AutoIceCreamSlider";
 import { inr, to12h } from "@/lib/format";
 import { ReviewCard } from "@/components/site/Reviews";
 import { useLang } from "@/context/LangContext";
@@ -188,12 +189,12 @@ const FeatureShowcase = () => (
         <p className="mt-2 text-xs text-choco/70 leading-relaxed">100% natural fruit pulps, pure milk, and zero artificial preservatives frozen fresh in small batches.</p>
         <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-strawberry">Explore Menu →</span>
       </Link>
-      <Link to="/menu" className="group rounded-3xl bg-gradient-to-br from-sky-50 via-sky-100/50 to-white p-7 border border-sky-200/50 shadow-sm hover:shadow-md transition-all">
+      <Link to="/box-builder" className="group rounded-3xl bg-gradient-to-br from-sky-50 via-sky-100/50 to-white p-7 border border-sky-200/50 shadow-sm hover:shadow-md transition-all">
         <span className="text-3xl mb-3 block">❄️</span>
         <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-sky-700 bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Sub-Zero Chiller Box</span>
-        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Superfast Doorstep Delivery</h3>
-        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Delivered in high-performance insulated cooler bags so your ice pops arrive rock-solid and icy cold.</p>
-        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700">Order Online →</span>
+        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Custom Box Builder</h3>
+        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Mix & match 6 or 12 handcrafted popsicles in an insulated chiller box with instant Razorpay test checkout.</p>
+        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700">Build Your Box 🎁 →</span>
       </Link>
       <Link to="/giftcards" className="group rounded-3xl bg-gradient-to-br from-amber-50 via-orange-100/40 to-white p-7 border border-amber-200/50 shadow-sm hover:shadow-md transition-all">
         <span className="text-3xl mb-3 block">🎁</span>
@@ -206,17 +207,44 @@ const FeatureShowcase = () => (
   </section>
 );
 
+const BoxBuilderBanner = () => (
+  <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-choco via-choco/95 to-strawberry/90 p-8 sm:p-10 text-cream shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="space-y-2 max-w-2xl">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-white">
+          <Sparkles className="h-3.5 w-3.5" /> 1-Click Express Checkout & Instant Mystery Cashback
+        </span>
+        <h2 className="font-display text-2xl sm:text-3xl font-black">
+          Craft Your Own Mix & Match Box 🎁
+        </h2>
+        <p className="text-sm text-cream/80">
+          Pick any 6 or 12 ice pops into a sub-zero insulated chiller pack. Delivered icy-cold with real-world Razorpay Test Mode checkout and post-payment scratch cards!
+        </p>
+      </div>
+      <Link
+        to="/box-builder"
+        className="shrink-0 inline-flex items-center gap-2 rounded-full bg-cream px-8 py-4 font-display text-base font-extrabold text-choco shadow-lg hover:bg-white hover:scale-105 active:scale-95 transition-all"
+      >
+        <span>Build Your Box Now</span>
+        <ArrowRight className="h-5 w-5" />
+      </Link>
+    </div>
+  </section>
+);
+
 export default function Home() {
   const store = useStore();
   const { hash } = useLocation();
   const [cats, setCats] = useState([]);
   const [featured, setFeatured] = useState([]);
   const [best, setBest] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [reviews, setReviews] = useState([]);
 
   useEffect(() => {
     api.get("/reviews/featured").then(({ data }) => setReviews(data)).catch(() => {});
     api.get("/catalog/categories").then(({ data }) => setCats(data)).catch(() => {});
+    api.get("/catalog/products").then(({ data }) => setAllProducts(data)).catch(() => {});
     api.get("/catalog/products", { params: { featured: true } }).then(({ data }) => setFeatured(data)).catch(() => {});
     api.get("/catalog/products", { params: { bestseller: true } }).then(({ data }) => setBest(data)).catch(() => {});
   }, []);
@@ -228,7 +256,9 @@ export default function Home() {
   return (
     <div data-testid="home-page">
       <Hero store={store} />
+      <AutoIceCreamSlider products={allProducts} />
       <FeatureShowcase />
+      <BoxBuilderBanner />
       {store && <Offers promotions={store.promotions} />}
       <Categories cats={cats} />
       <ProductRow title="Fresh this week" testid="featured-section" items={featured} />

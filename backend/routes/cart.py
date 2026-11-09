@@ -38,12 +38,15 @@ class QuoteIn(CartIn):
     fulfilment_type: Literal["delivery", "pickup"] = "delivery"
     pincode: Optional[str] = Field(None, max_length=6)
     use_loyalty_reward: bool = False
+    tip_paise: int = Field(0, ge=0, le=10000)
+    referral_code: Optional[str] = Field(None, max_length=20)
 
 
 @router.post("/cart/quote")
 async def quote(body: QuoteIn, user: Optional[User] = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
     q = await build_quote(db, user, body.items, body.coupon_code, body.fulfilment_type, body.pincode,
-                          use_reward=body.use_loyalty_reward)
+                          use_reward=body.use_loyalty_reward, tip_paise=body.tip_paise,
+                          referral_code=body.referral_code)
     return public_quote(q)
 
 

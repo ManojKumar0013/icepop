@@ -11,6 +11,7 @@ import { PAYMENT_LABELS, STATUS_STYLES, istDateTime } from "@/lib/format";
 import { ReorderButton } from "@/components/site/ReorderButton";
 import { PaidTick, PayOnline } from "@/components/site/PayOnline";
 import { RateOrder } from "@/components/site/Reviews";
+import { ScratchCard } from "@/components/site/ScratchCard";
 import { useLang } from "@/context/LangContext";
 
 const METHOD_LABELS = { pay_on_delivery: "Pay on delivery", pay_at_pickup: "Pay at pickup", online: "Online (UPI / card / netbanking)", wallet: "ICEPOPS Wallet" };
@@ -136,6 +137,9 @@ export default function OrderDetail() {
             <PayOnline o={o} autoStart={params.get("pay") === "1"} onChange={(d) => setO((prev) => ({ ...prev, ...d }))} />
           )}
           {(o.payment_method === "online" || o.payment_method === "wallet") && o.payment_status === "paid" && <PaidTick />}
+          {!["cancelled", "refund_pending", "refunded"].includes(o.status) && (
+            <ScratchCard orderNumber={o.order_number} onClaimed={() => load()} />
+          )}
           <RateOrder o={o} onDone={setO} />
           <div className="rounded-3xl border border-border bg-white p-6"><PriceSummary q={toQuote(o)} fulfilment={o.fulfilment_type} /></div>
           <div className="space-y-2 rounded-3xl border border-border bg-white p-6 text-sm">

@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional
@@ -11,6 +12,7 @@ from core.models import (
     ProductVariant, Promotion, PromotionRedemption, DeliveryZone, User,
 )
 from core.loyalty import loyalty_status, reward_eligible
+from core.referral import find_referrer
 from core.store import get_settings, paise
 
 NON_SUCCESS = ("cancelled", "refund_pending", "refunded")
@@ -72,7 +74,7 @@ async def _coupon_discount(db, code, user, lines, lock) -> tuple[Optional[dict],
 
 async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupon_code: Optional[str],
                       fulfilment_type: str, pincode: Optional[str], lock: bool = False,
-                      use_reward: bool = False) -> dict:
+                      use_reward: bool = False, tip_paise: int = 0, referral_code: Optional[str] = None) -> dict:
     errors, notes = [], []
     settings = await get_settings(db)
     promos = {p.code: p for p in (await db.execute(select(Promotion))).scalars()}
@@ -191,10 +193,30 @@ async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupo
         if cand:
             candidates.append(cand)
 
+    referral_error = None
+    if referral_code and referral_code.strip():
+        ref_clean = referral_code.strip().upper()
+        referrer = await find_referrer(db, ref_clean)
+        if not referrer:
+            referral_error = f"Referral code '{ref_clean}' is not recognized."
+        elif user and user.id == referrer.id:
+            referral_error = "You cannot use your own referral code."
+        elif user and not await is_new_customer(db, user):
+            referral_error = "Referral bonuses are valid only on your first order."
+        else:
+            notes.append(f"Referral code {ref_clean} active! You and your friend will both receive ₹10 in your ICEPOPS wallet once your first order is placed 🎉")
+    elif user and user.referred_by_id and (await is_new_customer(db, user)):
+        ref_user = (await db.execute(select(User).where(User.id == user.referred_by_id))).scalar_one_or_none()
+        if ref_user:
+            notes.append(f"Friend invite active ({ref_user.name})! You'll both receive ₹10 in your ICEPOPS wallet after this first order 🎉")
+
     applied = []
+    promo_cands = [c for c in candidates if c["kind"] == "promotion"]
+    code_cands = [c for c in candidates if c["kind"] in ("coupon",)]
+
     if settings.allow_offer_stacking:
         taken = 0
-        for cand in [c for c in candidates if not c.get("exclusive")]:
+        for cand in [c for c in promo_cands if not c.get("exclusive")]:
             if cand["code"] == "first_order":
                 remaining = units[taken:]
                 if not remaining:
@@ -202,15 +224,18 @@ async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupo
                 cand["alloc"], cand["amount"] = [remaining[0]], remaining[0][0]
             taken += len(cand["alloc"])
             applied.append(cand)
-        exclusive = [c for c in candidates if c.get("exclusive")]
-        if exclusive and exclusive[0]["amount"] > sum(c["amount"] for c in applied if c["kind"] != "coupon"):
-            applied = exclusive[:1] + [c for c in applied if c["kind"] == "coupon"]
-    elif candidates:
-        best = max(candidates, key=lambda c: c["amount"])
+        exclusive = [c for c in promo_cands if c.get("exclusive")]
+        if exclusive and exclusive[0]["amount"] > sum(c["amount"] for c in applied if c["kind"] == "promotion"):
+            applied = exclusive[:1]
+    elif promo_cands:
+        best = max(promo_cands, key=lambda c: c["amount"])
         applied = [best]
-        others = [c["label"] for c in candidates if c is not best]
+        others = [c["label"] for c in promo_cands if c is not best]
         if others:
-            notes.append(f"Only one offer can be used per order — we applied the best one ({best['label']}). Not combined: {', '.join(others)}.")
+            notes.append(f"Only one parlour promotion can be used per order — applied {best['label']}.")
+
+    # Add customer's applied coupon or friend referral code
+    applied.extend(code_cands)
 
     loyalty = {"enabled": False, "applied": False}
     lp = promos.get("loyalty")
@@ -291,6 +316,8 @@ async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupo
             if vid in by_line:
                 by_line[vid]["discount_paise"] += d
 
+    tip = max(0, min(10000, int(tip_paise or 0))) if fulfilment_type == "delivery" else 0
+
     return {
         "lines": lines,
         "subtotal_paise": subtotal,
@@ -300,9 +327,12 @@ async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupo
         "delivery_savings_paise": delivery_waived,
         "free_delivery_remaining_paise": free_remaining,
         "delivery_zone": zone_name,
-        "total_paise": items_after_discount + delivery_fee,
+        "tip_paise": tip,
+        "total_paise": items_after_discount + delivery_fee + tip,
         "coupon_code": next((c["code"] for c in applied if c["kind"] == "coupon"), None),
         "coupon_error": coupon_error,
+        "referral_code": referral_code.strip().upper() if (referral_code and not referral_error) else None,
+        "referral_error": referral_error,
         "notes": notes,
         "errors": errors,
         "fulfilment_type": fulfilment_type,

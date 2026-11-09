@@ -1,6 +1,6 @@
 export const TE = {
   Home: "హోమ్", Menu: "మెనూ", Offers: "ఆఫర్లు", "Track order": "ఆర్డర్ ట్రాక్", "Visit us": "మమ్మల్ని సందర్శించండి",
-  "Log in": "లాగిన్", "Log in / Sign up": "లాగిన్ / సైన్ అప్", "My account": "నా ఖాతా", "My orders": "నా ఆర్డర్లు",
+  "Log in": "లాగిన్", "Log in / Sign up": "లాగిన్ / సైన్ అప్", "My account": "నా ఖాతా", "My orders": "నా ఆర్డర్లు", "Refer & earn": "రిఫర్ & సంపాదించండి",
   "Seller dashboard": "సెల్లర్ డాష్‌బోర్డ్", "Log out": "లాగ్ అవుట్",
   Add: "జోడించు", "Out of stock": "స్టాక్ లేదు", "Sold out": "అయిపోయింది", Bestseller: "బెస్ట్ సెల్లర్", added: "జోడించబడింది",
   "The menu": "మెనూ", "Scoop, sip, repeat.": "తినండి, తాగండి, మళ్ళీ రండి.", "Search flavours…": "ఫ్లేవర్లు వెతకండి…", All: "అన్నీ",

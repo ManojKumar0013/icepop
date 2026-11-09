@@ -9,6 +9,7 @@ import { LangProvider } from "@/context/LangContext";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { WhatsAppFab } from "@/components/site/WhatsApp";
+import { FloatingCartBar } from "@/components/site/FloatingCartBar";
 import { RequireAdmin, RequireAuth, RequireRider } from "@/components/site/Guards";
 import Home from "@/pages/Home";
 import Menu from "@/pages/Menu";
@@ -25,6 +26,7 @@ import { ForgotPassword, ResetPassword } from "@/pages/PasswordPages";
 import AuthCallback from "@/pages/AuthCallback";
 import Policy from "@/pages/Policy";
 import GiftCards from "@/pages/GiftCards";
+import BoxBuilder from "@/pages/BoxBuilder";
 import RiderPortal from "@/pages/RiderPortal";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import AdminOverview from "@/pages/admin/AdminOverview";
@@ -44,6 +46,7 @@ const SiteLayout = () => (
     <main className="flex-1"><Outlet /></main>
     <Footer />
     <WhatsAppFab />
+    <FloatingCartBar />
   </div>
 );
 
@@ -51,10 +54,21 @@ const NotFound = () => <div className="p-20 text-center font-display text-2xl fo
 const authed = (el) => <RequireAuth>{el}</RequireAuth>;
 
 const ScrollToTop = () => {
-  const { pathname, hash } = useLocation();
+  const { pathname, hash, search } = useLocation();
   useEffect(() => {
     if (!hash) window.scrollTo(0, 0);
   }, [pathname, hash]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const ref = params.get("ref");
+    if (ref) {
+      const code = ref.trim().toUpperCase();
+      localStorage.setItem("icepops_referral", code);
+      toast.success(`🎉 Referral code ${code} applied! You get ₹20 off your first order.`, { duration: 4000 });
+    }
+  }, [search]);
+
   return null;
 };
 
@@ -67,6 +81,7 @@ function AppRouter() {
         <Route path="/" element={<Home />} />
         <Route path="/menu" element={<Menu />} />
         <Route path="/menu/:slug" element={<ProductDetail />} />
+        <Route path="/box-builder" element={<BoxBuilder />} />
         <Route path="/giftcards" element={<GiftCards />} />
         <Route path="/rider" element={<RequireRider><RiderPortal /></RequireRider>} />
         <Route path="/cart" element={<Cart />} />

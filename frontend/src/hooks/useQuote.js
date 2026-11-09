@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 
-export function useQuote({ coupon = "", fulfilment = "delivery", pincode = "", useReward = false } = {}) {
+export function useQuote({ coupon = "", fulfilment = "delivery", pincode = "", useReward = false, tip_paise = 0, referral_code = "" } = {}) {
   const { items } = useCart();
   const { user } = useAuth();
   const [quote, setQuote] = useState(null);
@@ -27,6 +27,7 @@ export function useQuote({ coupon = "", fulfilment = "delivery", pincode = "", u
       api.post("/cart/quote", {
         items, coupon_code: coupon || null, fulfilment_type: fulfilment,
         pincode: /^\d{6}$/.test(pincode) ? pincode : null, use_loyalty_reward: useReward,
+        tip_paise: tip_paise || 0, referral_code: referral_code || null,
       }).then(({ data }) => {
         if (live) {
           setQuote(data);
@@ -47,7 +48,7 @@ export function useQuote({ coupon = "", fulfilment = "delivery", pincode = "", u
       live = false;
       clearTimeout(t);
     };
-  }, [items, coupon, fulfilment, pincode, useReward, user?.id, reloadTick]);
+  }, [items, coupon, fulfilment, pincode, useReward, tip_paise, referral_code, user?.id, reloadTick]);
 
   return { quote, loading, error, refetch };
 }

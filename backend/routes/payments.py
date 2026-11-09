@@ -12,7 +12,8 @@ from core.db import get_db
 from core.models import Order, OrderStatusHistory, Payment, User
 from core.notify import deliver_external, notify_order_event
 from core.payments import OFFLINE_METHODS, PaymentService, rzp, rzp_call, rzp_keys
-from core.security import rate_limit, require_user
+from core.referral import award_referral_bonus_if_eligible
+from core.security import client_ip, rate_limit, require_user
 from core.store import get_settings
 from routes.orders import get_owned_order, load_history, order_out
 
@@ -66,7 +67,10 @@ class VerifyIn(OrderRef):
     razorpay_signature: str = Field(max_length=200)
 
 
-async def _after_paid(db, o: Order, p: Payment, background: BackgroundTasks):
+async def _after_paid(db, o: Order, p: Payment, background: BackgroundTasks, client_ip_addr: str = "system"):
+    u = (await db.execute(select(User).where(User.id == o.user_id))).scalar_one_or_none()
+    if u:
+        await award_referral_bonus_if_eligible(db, u, o, client_ip_addr)
     await notify_order_event(db, o, "payment_paid")
     events = ["payment_paid"]
     if o.status == "cancelled" and await PaymentService.refund_online(o, p, None, db):
@@ -78,7 +82,7 @@ async def _after_paid(db, o: Order, p: Payment, background: BackgroundTasks):
 
 
 @router.post("/razorpay/verify")
-async def verify(body: VerifyIn, background: BackgroundTasks, user: User = Depends(require_user),
+async def verify(body: VerifyIn, request: Request, background: BackgroundTasks, user: User = Depends(require_user),
                  db: AsyncSession = Depends(get_db)):
     o = await get_owned_order(db, user, body.order_number, lock=True)
     if o.user_id != user.id:
@@ -99,7 +103,7 @@ async def verify(body: VerifyIn, background: BackgroundTasks, user: User = Depen
     if rp.get("status") != "captured":
         raise HTTPException(status_code=400, detail="Payment is not complete yet. Please try again.")
     if PaymentService.apply_captured(o, p, rp):
-        await _after_paid(db, o, p, background)
+        await _after_paid(db, o, p, background, client_ip(request))
     else:
         await db.commit()
     return order_out(o, await load_history(db, o.id))
@@ -110,7 +114,7 @@ class SwitchIn(OrderRef):
 
 
 @router.post("/switch-method")
-async def switch_method(body: SwitchIn, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+async def switch_method(body: SwitchIn, request: Request, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     o, p = await _my_unpaid_online(db, user, body.order_number)
     s = await get_settings(db)
     if body.payment_method not in OFFLINE_METHODS:
@@ -118,6 +122,7 @@ async def switch_method(body: SwitchIn, user: User = Depends(require_user), db: 
     PaymentService.validate_method(s.payment_methods or [], body.payment_method, o.fulfilment_type)
     o.payment_method = p.method = body.payment_method
     p.provider = "offline"
+    await award_referral_bonus_if_eligible(db, user, o, client_ip(request))
     db.add(OrderStatusHistory(order_id=o.id, from_status=o.status, to_status=o.status,
                               note=f"Payment changed to {body.payment_method.replace('_', ' ')}", actor_user_id=user.id))
     await db.commit()

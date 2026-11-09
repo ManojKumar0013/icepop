@@ -138,8 +138,9 @@ def _shell(s: BusinessSettings, preheader: str, body_rows: str) -> str:
     num = _contact(s)
     call = f'Call / WhatsApp: <a href="tel:+91{escape(num)}" style="color:{CHOCO}">{escape(num)}</a>' if num else ""
     fssai = f" · FSSAI {escape(s.fssai_number)}" if _real(s.fssai_number) else ""
-    footer = (f'{escape(s.business_name)} · {escape(s.address_line)}, {escape(s.city)}, {escape(s.state)} '
-              f'{escape(s.pincode)}<br>{call}{fssai}<br><br>'
+    addr_parts = [escape(x) for x in [s.address_line, s.city, s.state, s.pincode] if x]
+    addr_str = ", ".join(addr_parts) if addr_parts else "India"
+    footer = (f'{escape(s.business_name or "ICEPOPS")} · {addr_str}<br>{call}{fssai}<br><br>'
               f'We never ask for your password or card details by email.')
     return (f'<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"></head>'
@@ -256,3 +257,66 @@ def password_reset_email(name: str, link: str, s: BusinessSettings) -> str:
             f'<p style="margin:8px 0 0;{FONT};font-size:13px;color:{MUTED}">If you didn\'t request this, you can safely '
             f'ignore this email.</p></td></tr>')
     return _shell(s, "Reset your password", rows)
+
+
+def signup_otp_email(name: str, otp: str, s: BusinessSettings) -> tuple[str, str]:
+    subject = f"{otp} is your verification code · {s.business_name}"
+    preheader = f"Your {s.business_name} verification code is {otp}"
+    greeting_name = escape(name.strip()) if name and name.strip() else "there"
+
+    hero_text = (
+        f"Hi <strong>{greeting_name}</strong>, welcome to <strong>{escape(s.business_name)}</strong>! "
+        f"You're just one quick step away from chilled, handcrafted happiness. "
+        f"Please enter the verification code below to verify your email and activate your account."
+    )
+
+    otp_box = (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;'
+        f'background:{CREAM};border-radius:16px;border:1px solid {LINE};overflow:hidden">'
+        f'<tr><td style="padding:22px 24px;text-align:center">'
+        f'<p style="margin:0 0 6px;{FONT};font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:{MUTED}">'
+        f'One-Time Verification Code (OTP)</p>'
+        f'<div style="{FONT};font-size:38px;font-weight:900;letter-spacing:10px;color:{ORANGE};padding:6px 0;'
+        f'display:inline-block;padding-left:10px">{escape(otp)}</div>'
+        f'<p style="margin:8px 0 0;{FONT};font-size:12px;font-weight:600;color:{MUTED}">'
+        f'Valid for 10 minutes · Do not share this code with anyone</p>'
+        f'</td></tr></table>'
+    )
+
+    perks_html = (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px">'
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid {LINE};{FONT};font-size:14px;color:{CHOCO}">'
+        f'<strong>Free Welcome Popsicle</strong><br><span style="color:{MUTED};font-size:12px">'
+        f'1 complimentary water popsicle on your first order above ₹50</span></td>'
+        f'<td align="right" valign="middle" style="padding:10px 0;border-bottom:1px solid {LINE};{FONT};'
+        f'font-size:12px;font-weight:700;color:#1F8A4C;white-space:nowrap">WELCOME GIFT</td></tr>'
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid {LINE};{FONT};font-size:14px;color:{CHOCO}">'
+        f'<strong>Digital Stamp Card</strong><br><span style="color:{MUTED};font-size:12px">'
+        f'Collect stamps with every order to unlock free popsicles</span></td>'
+        f'<td align="right" valign="middle" style="padding:10px 0;border-bottom:1px solid {LINE};{FONT};'
+        f'font-size:12px;font-weight:700;color:{ORANGE};white-space:nowrap">REWARDS</td></tr>'
+        f'<tr><td style="padding:10px 0;{FONT};font-size:14px;color:{CHOCO}">'
+        f'<strong>Refer & Earn ₹10</strong><br><span style="color:{MUTED};font-size:12px">'
+        f'Give ₹10 to friends and get ₹10 in your wallet after their first order</span></td>'
+        f'<td align="right" valign="middle" style="padding:10px 0;{FONT};'
+        f'font-size:12px;font-weight:700;color:{CHOCO};white-space:nowrap">₹10 WALLET</td></tr>'
+        f'</table>'
+    )
+
+    rows = (
+        f'<tr><td style="padding:32px 32px 6px">'
+        f'<p style="margin:0 0 8px;{FONT};font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:{ORANGE}">'
+        f'Email Verification · Welcome</p>'
+        f'<h1 style="margin:0 0 12px;{FONT};font-size:26px;line-height:32px;font-weight:800;color:{CHOCO}">'
+        f'Verify your email address</h1>'
+        f'<p style="margin:0;{FONT};font-size:15px;line-height:23px;color:{CHOCO}">{hero_text}</p>'
+        f'{otp_box}'
+        f'</td></tr>'
+        + _section("What's waiting for you", perks_html)
+        + f'<tr><td style="padding:16px 32px 28px">'
+          f'<p style="margin:0;{FONT};font-size:13px;line-height:20px;color:{MUTED}">'
+          f'If you did not request this verification code, you can safely ignore this email. No account will be created without this code.'
+          f'</p></td></tr>'
+    )
+    return subject, _shell(s, preheader, rows)
+

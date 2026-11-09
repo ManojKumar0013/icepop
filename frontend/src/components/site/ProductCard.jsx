@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Minus, Plus } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowRight, Minus, Plus, ShoppingBag, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useCart } from "@/context/CartContext";
 import { inr } from "@/lib/format";
@@ -8,6 +8,7 @@ import { useLang } from "@/context/LangContext";
 
 export const ProductCard = ({ product, index = 0 }) => {
   const { add, items, setQty } = useCart();
+  const navigate = useNavigate();
   const firstInStock = product.variants.find((v) => v.in_stock) || product.variants[0];
   const [variantId, setVariantId] = useState(firstInStock?.id);
   const variant = product.variants.find((v) => v.id === variantId);
@@ -17,9 +18,27 @@ export const ProductCard = ({ product, index = 0 }) => {
   const cartItem = items.find((i) => i.variant_id === variant?.id);
   const currentQty = cartItem?.quantity || 0;
 
-  const onAdd = () => {
+  const onAdd = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     add(variant.id);
     toast.success(`${pn(product)} ${t("added")}`, { description: product.variants.length > 1 ? variant.name : undefined });
+  };
+
+  const onBuyNow = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!variant?.id) return;
+    if (currentQty === 0) {
+      add(variant.id);
+    }
+    navigate("/checkout");
+  };
+
+  const onGoToCart = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    navigate("/cart");
   };
 
   return (
@@ -50,49 +69,96 @@ export const ProductCard = ({ product, index = 0 }) => {
             ))}
           </div>
         )}
-        <div className="mt-auto flex items-center justify-between pt-1">
-          <span data-testid={`product-price-${product.slug}`} className="font-display text-xl font-extrabold">{variant ? inr(variant.price_paise) : "—"}</span>
-          {currentQty > 0 ? (
-            <div data-testid={`product-stepper-${product.slug}`} className="flex items-center rounded-full bg-strawberry text-white shadow-sm h-9 px-1 transition-all">
+        <div className="mt-auto space-y-2 pt-1">
+          <div className="flex items-center justify-between gap-2">
+            <span data-testid={`product-price-${product.slug}`} className="font-display text-xl font-extrabold text-choco shrink-0">
+              {variant ? inr(variant.price_paise) : "—"}
+            </span>
+
+            {currentQty > 0 ? (
+              <div data-testid={`product-stepper-${product.slug}`} className="flex items-center rounded-full bg-strawberry text-white shadow-sm h-9 px-1 transition-all">
+                <button
+                  type="button"
+                  aria-label="Decrease quantity"
+                  data-testid={`product-decrease-${product.slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setQty(variant.id, currentQty - 1);
+                    if (currentQty === 1) {
+                      toast.info(`${pn(product)} removed`);
+                    }
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90"
+                >
+                  <Minus className="h-4 w-4 stroke-[3]" />
+                </button>
+                <span data-testid={`product-qty-${product.slug}`} className="min-w-7 px-1 text-center font-display text-sm font-black text-white select-none">
+                  {currentQty}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Increase quantity"
+                  data-testid={`product-increase-${product.slug}`}
+                  disabled={!canAdd || currentQty >= 50}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setQty(variant.id, currentQty + 1);
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90 disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4 stroke-[3]" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={onAdd}
+                  disabled={!canAdd}
+                  data-testid={`add-to-cart-${product.slug}`}
+                  className="flex items-center gap-1 rounded-full bg-choco px-3.5 py-2 text-xs font-bold text-cream transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-strawberry active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground shadow-2xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {canAdd ? t("Add") : t("Out of stock")}
+                </button>
+                {canAdd && (
+                  <button
+                    type="button"
+                    onClick={onBuyNow}
+                    data-testid={`buy-now-${product.slug}`}
+                    className="flex items-center gap-1 rounded-full bg-strawberry px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-strawberry/90 active:scale-95 transition-all"
+                  >
+                    <Zap className="h-3.5 w-3.5 fill-current" />
+                    <span>Buy Now</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Expanded Action Bar when item is added to cart */}
+          {currentQty > 0 && (
+            <div className="flex items-center gap-2 pt-1 animate-in fade-in slide-in-from-top-1 duration-200">
               <button
                 type="button"
-                aria-label="Decrease quantity"
-                data-testid={`product-decrease-${product.slug}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setQty(variant.id, currentQty - 1);
-                  if (currentQty === 1) {
-                    toast.info(`${pn(product)} removed`);
-                  }
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90"
+                onClick={onGoToCart}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-cream-deep border border-choco/15 py-2 px-2.5 text-xs font-bold text-choco hover:bg-choco hover:text-cream active:scale-95 transition-all shadow-2xs"
               >
-                <Minus className="h-4 w-4 stroke-[3]" />
+                <ShoppingBag className="h-3.5 w-3.5 text-strawberry" />
+                <span>Go to Cart</span>
               </button>
-              <span data-testid={`product-qty-${product.slug}`} className="min-w-7 px-1 text-center font-display text-sm font-black text-white select-none">
-                {currentQty}
-              </span>
               <button
                 type="button"
-                aria-label="Increase quantity"
-                data-testid={`product-increase-${product.slug}`}
-                disabled={!canAdd || currentQty >= 50}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setQty(variant.id, currentQty + 1);
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90 disabled:opacity-40"
+                onClick={onBuyNow}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-strawberry py-2 px-2.5 text-xs font-bold text-white hover:bg-strawberry/90 active:scale-95 transition-all shadow-sm"
               >
-                <Plus className="h-4 w-4 stroke-[3]" />
+                <Zap className="h-3.5 w-3.5 fill-current" />
+                <span>Buy Now</span>
+                <ArrowRight className="h-3 w-3" />
               </button>
             </div>
-          ) : (
-            <button type="button" onClick={onAdd} disabled={!canAdd} data-testid={`add-to-cart-${product.slug}`}
-              className="flex items-center gap-1.5 rounded-full bg-choco px-4 py-2 text-sm font-bold text-cream transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-strawberry active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground">
-              <Plus className="h-4 w-4" />{canAdd ? t("Add") : t("Out of stock")}
-            </button>
           )}
         </div>
       </div>

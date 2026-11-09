@@ -44,6 +44,7 @@ class User(Timestamped, Base):
     picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     language: Mapped[str] = mapped_column(String(5), default="en", server_default="en")
     referral_code: Mapped[Optional[str]] = mapped_column(String(20), unique=True, nullable=True)
+    referred_by_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wallet_balance_paise: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     roles: Mapped[list[Role]] = relationship(secondary="user_roles", lazy="selectin")

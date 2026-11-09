@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import httpx
+import core.config
 
 logger = logging.getLogger(__name__)
 

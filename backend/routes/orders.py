@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import re
 import secrets
 from datetime import datetime, timezone
@@ -11,18 +12,21 @@ from pydantic import Field, field_validator, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from core.config import IST
 from core.db import get_db
 from core.models import (
-    Address, Cart, CartItem, CouponRedemption, Inventory, InventoryMovement, Order, OrderItem,
-    OrderStatusHistory, Payment, PromotionRedemption, Review, Role, User,
+    Address, AuditLog, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryMovement,
+    LoyaltyStamp, Notification, Order, OrderItem, OrderStatusHistory, Payment,
+    PromotionRedemption, Review, Role, User,
 )
 from core.notify import STATUS_LABELS, broadcaster, deliver_external, notify_order_event
 from core.payments import PaymentService
 from core.pricing import build_quote, first_order_key, public_quote
+from core.referral import award_referral_bonus_if_eligible, reverse_referral_bonus_if_awarded
 from core.security import (
-    create_session, get_optional_user, normalize_phone, rate_limit, require_user, user_out, validate_pincode,
+    audit, client_ip, create_session, get_optional_user, normalize_phone, rate_limit, require_user, user_out, validate_pincode,
 )
 from core.store import get_settings, validate_order_time
 from routes.cart import QuoteIn
@@ -94,6 +98,8 @@ def order_out(o: Order, history=None, payment: Payment = None, admin=False) -> d
         "wallet_deducted_paise": (o.pricing_breakdown or {}).get("wallet_deducted_paise", 0),
         "original_total_paise": (o.pricing_breakdown or {}).get("original_total_paise", o.total_paise),
         "coupon_code": o.coupon_code, "payment_method": o.payment_method, "payment_status": o.payment_status,
+        "tip_paise": (o.pricing_breakdown or {}).get("tip_paise", 0),
+        "referral_code": (o.pricing_breakdown or {}).get("referral_code"),
         "cancel_reason": o.cancel_reason, "created_at": o.created_at.isoformat(), "updated_at": o.updated_at.isoformat(),
         "delivery_otp": o.delivery_otp if should_reveal_otp(o, admin) else None,
         "rider_name": o.rider_name, "rider_phone": o.rider_phone, "is_pos": o.is_pos,
@@ -129,7 +135,7 @@ def _order_number() -> str:
 
 
 @router.post("")
-async def place_order(body: OrderIn, background: BackgroundTasks, response: Response,
+async def place_order(body: OrderIn, background: BackgroundTasks, response: Response, request: Request,
                       user: Optional[User] = Depends(get_optional_user),
                       db: AsyncSession = Depends(get_db)):
     auth_token = None
@@ -183,13 +189,16 @@ async def place_order(body: OrderIn, background: BackgroundTasks, response: Resp
     use_wallet = body.use_wallet or is_direct_wallet
 
     q = await build_quote(db, user, body.items, body.coupon_code, body.fulfilment_type, body.pincode, lock=True,
-                          use_reward=body.use_loyalty_reward)
+                          use_reward=body.use_loyalty_reward, tip_paise=body.tip_paise, referral_code=body.referral_code)
     if q["errors"]:
         await db.rollback()
         raise HTTPException(status_code=400, detail=q["errors"][0])
     if body.coupon_code and body.coupon_code.strip() and q["coupon_error"]:
         await db.rollback()
         raise HTTPException(status_code=400, detail=q["coupon_error"])
+    if body.referral_code and body.referral_code.strip() and q["referral_error"]:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=q["referral_error"])
 
     order_base_total = q["total_paise"]
 
@@ -235,7 +244,8 @@ async def place_order(body: OrderIn, background: BackgroundTasks, response: Resp
         delivery_fee_paise=q["delivery_fee_paise"],
         total_paise=payable_total if payable_total > 0 else order_base_total,
         pricing_breakdown={"discounts": q["discounts"], "delivery_savings_paise": q["delivery_savings_paise"],
-                           "notes": q["notes"], "wallet_deducted_paise": wallet_deduction, "original_total_paise": order_base_total},
+                           "notes": q["notes"], "wallet_deducted_paise": wallet_deduction, "original_total_paise": order_base_total,
+                           "tip_paise": q.get("tip_paise", 0), "referral_code": q.get("referral_code") or (body.referral_code.strip().upper() if body.referral_code else None)},
         coupon_code=q["coupon_code"], payment_method=effective_method,
         payment_status=effective_payment_status,
         delivery_otp=delivery_otp,
@@ -306,6 +316,10 @@ async def place_order(body: OrderIn, background: BackgroundTasks, response: Resp
     cart = (await db.execute(select(Cart).where(Cart.user_id == user.id))).scalar_one_or_none()
     if cart:
         await db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
+
+    if effective_method != "online" or effective_payment_status == "paid":
+        await award_referral_bonus_if_eligible(db, user, order, client_ip(request))
+
     await notify_order_event(db, order, "placed")
     try:
         await db.commit()
@@ -394,6 +408,94 @@ async def release_order_resources(db: AsyncSession, order: Order, actor_id: int)
     for r in (await db.execute(select(PromotionRedemption).where(PromotionRedemption.order_id == order.id))).scalars():
         r.status, r.once_key = "void", None
 
+    bd = dict(order.pricing_breakdown or {})
+    sc = bd.get("scratch_card")
+    if sc and sc.get("claimed") and not sc.get("revoked"):
+        target_user_id = order.user_id
+        user_record = (await db.execute(select(User).where(User.id == target_user_id).with_for_update())).scalar_one_or_none()
+        reward_type = sc.get("reward_type")
+
+        if reward_type == "cashback":
+            amount_paise = sc.get("amount_paise", 0)
+            if amount_paise > 0 and user_record:
+                # Cancel/reverse scratch card cashback from wallet
+                user_record.wallet_balance_paise = max(0, (user_record.wallet_balance_paise or 0) - amount_paise)
+                audit(
+                    db,
+                    user_record,
+                    "scratch_card_reversal",
+                    "order",
+                    order.order_number,
+                    {
+                        "amount_paise": amount_paise,
+                        "title": sc.get("title"),
+                        "reason": "Order cancelled",
+                    },
+                    "system",
+                )
+                db.add(Notification(
+                    user_id=target_user_id,
+                    title="Scratch Card Cashback Reversed ⚠️",
+                    body=f"₹{amount_paise // 100} scratch card reward for Order #{order.order_number} has been cancelled because the order was cancelled.",
+                ))
+        elif reward_type == "free_delivery":
+            coupon_code = sc.get("coupon_code")
+            if coupon_code:
+                c = (await db.execute(select(Coupon).where(Coupon.code == coupon_code))).scalar_one_or_none()
+                if c:
+                    c.is_active = False
+        elif reward_type == "loyalty_stamps":
+            stamps_count = sc.get("stamps", 2)
+            active_stamps = (await db.execute(
+                select(LoyaltyStamp)
+                .where(LoyaltyStamp.user_id == target_user_id, LoyaltyStamp.status == "active")
+                .order_by(LoyaltyStamp.id.desc())
+            )).scalars().all()
+            for st in active_stamps[:stamps_count]:
+                st.status = "void"
+
+        sc["revoked"] = True
+        sc["revoked_at"] = datetime.now(timezone.utc).isoformat()
+        bd["scratch_card"] = sc
+        order.pricing_breakdown = bd
+        flag_modified(order, "pricing_breakdown")
+    elif not sc or not sc.get("claimed"):
+        bd["scratch_card"] = {"claimed": False, "eligible": False, "cancelled": True}
+        order.pricing_breakdown = bd
+        flag_modified(order, "pricing_breakdown")
+
+    # If the customer spent wallet balance on this order, refund the spent wallet balance back
+    wallet_deducted = bd.get("wallet_deducted_paise", 0)
+    if wallet_deducted > 0 and not bd.get("wallet_refunded"):
+        target_user_id = order.user_id
+        user_record = (await db.execute(select(User).where(User.id == target_user_id).with_for_update())).scalar_one_or_none()
+        if user_record:
+            user_record.wallet_balance_paise = (user_record.wallet_balance_paise or 0) + wallet_deducted
+            bd["wallet_refunded"] = True
+            bd["wallet_refunded_at"] = datetime.now(timezone.utc).isoformat()
+            order.pricing_breakdown = bd
+            flag_modified(order, "pricing_breakdown")
+            audit(
+                db,
+                user_record,
+                "wallet_order_refund",
+                "order",
+                order.order_number,
+                {
+                    "amount_paise": wallet_deducted,
+                    "reason": "Order cancelled",
+                },
+                "system",
+            )
+            db.add(Notification(
+                user_id=target_user_id,
+                title="Wallet Refund Credited 🍨",
+                body=f"₹{wallet_deducted // 100} paid from your wallet has been refunded for cancelled Order #{order.order_number}.",
+            ))
+
+    # Referral bonus reversal: cancel ₹10 from both customer and referrer
+    await reverse_referral_bonus_if_awarded(db, order, "system")
+
 
 @router.post("/{number}/cancel")
 async def cancel_my_order(number: str, request: Request, background: BackgroundTasks,
@@ -417,3 +519,197 @@ async def cancel_my_order(number: str, request: Request, background: BackgroundT
     await db.commit()
     background.add_task(deliver_external, o.id, event)
     return order_out(o, await load_history(db, o.id))
+
+
+@router.get("/{number}/scratch-card")
+async def get_scratch_card(
+    number: str,
+    user: Optional[User] = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check scratch card availability and reward status for an order."""
+    o = (await db.execute(select(Order).where(Order.order_number == number))).scalar_one_or_none()
+    if not o:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if o.status in ("cancelled", "refund_pending", "refunded"):
+        bd = dict(o.pricing_breakdown or {})
+        sc = bd.get("scratch_card")
+        if sc and sc.get("revoked"):
+            return {
+                "eligible": False,
+                "claimed": True,
+                "revoked": True,
+                "reward_type": sc.get("reward_type", "cashback"),
+                "amount_paise": sc.get("amount_paise", 500),
+                "title": sc.get("title", f"₹{sc.get('amount_paise', 500) // 100} Cashback"),
+                "reason": "This scratch card reward was cancelled because the order was cancelled.",
+            }
+        return {"eligible": False, "reason": "Scratch cards are not available for cancelled orders."}
+
+    is_paid = o.payment_status == "paid" or o.status not in ("cancelled", "refund_pending", "refunded")
+    if not is_paid:
+        return {"eligible": False, "reason": "Order must be confirmed or paid to unlock scratch card"}
+
+    bd = dict(o.pricing_breakdown or {})
+    sc = bd.get("scratch_card")
+    if not sc or not sc.get("reward_type"):
+        # Pre-determine the scratch card reward when checked so the underlying card matches 100%
+        choices = [
+            ("cashback", 500, "₹5 Cashback"),
+            ("cashback", 600, "₹6 Cashback"),
+            ("cashback", 700, "₹7 Cashback"),
+            ("cashback", 800, "₹8 Cashback"),
+            ("cashback", 900, "₹9 Cashback"),
+            ("cashback", 1000, "₹10 Cashback"),
+            ("free_delivery", 3000, "Free Delivery on Next Order"),
+            ("loyalty_stamps", 2, "+2 Loyalty Stamps"),
+        ]
+        weights = [60, 8, 7, 5, 5, 5, 5, 5]
+        picked = random.choices(choices, weights=weights, k=1)[0]
+        reward_type, reward_val, reward_title = picked
+        sc = {
+            "eligible": True,
+            "claimed": False,
+            "reward_type": reward_type,
+            "amount_paise": reward_val if reward_type == "cashback" else (3000 if reward_type == "free_delivery" else 0),
+            "title": reward_title,
+            "stamps": reward_val if reward_type == "loyalty_stamps" else 0,
+        }
+        bd["scratch_card"] = sc
+        o.pricing_breakdown = bd
+        flag_modified(o, "pricing_breakdown")
+        await db.commit()
+
+    return {
+        "eligible": True,
+        "claimed": sc.get("claimed", False),
+        "reward_type": sc.get("reward_type", "cashback"),
+        "amount_paise": sc.get("amount_paise", 500),
+        "title": sc.get("title", f"₹{sc.get('amount_paise', 500) // 100} Cashback"),
+        "coupon_code": sc.get("coupon_code"),
+        "stamps": sc.get("stamps", 0),
+        "claimed_at": sc.get("claimed_at"),
+        "revealed": sc.get("claimed", False),
+    }
+
+
+@router.post("/{number}/scratch-card/claim")
+async def claim_scratch_card(
+    number: str,
+    request: Request,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Claim scratch card mystery reward (₹5-₹10, Free Delivery, or +2 Loyalty Stamps)."""
+    o = await get_owned_order(db, user, number, lock=True)
+    if o.user_id != user.id and "admin" not in user.role_names:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if o.status in ("cancelled", "refund_pending", "refunded"):
+        raise HTTPException(status_code=400, detail="Scratch card is not available for cancelled orders.")
+
+    bd = dict(o.pricing_breakdown or {})
+    sc = bd.get("scratch_card")
+    if sc and sc.get("claimed"):
+        return {
+            "ok": True,
+            "claimed": True,
+            "already_claimed": True,
+            "reward_type": sc.get("reward_type", "cashback"),
+            "amount_paise": sc.get("amount_paise", 500),
+            "title": sc.get("title", f"₹{sc.get('amount_paise', 500) // 100} Cashback"),
+            "coupon_code": sc.get("coupon_code"),
+            "stamps": sc.get("stamps", 0),
+            "message": f"You already claimed {sc.get('title', 'reward')} for this order!",
+        }
+
+    # Use the pre-determined reward from the scratch card so the outcome never changes mid-scratch
+    if sc and sc.get("reward_type"):
+        reward_type = sc.get("reward_type", "cashback")
+        reward_title = sc.get("title", "₹5 Cashback")
+        if reward_type == "cashback":
+            reward_val = sc.get("amount_paise", 500)
+        elif reward_type == "loyalty_stamps":
+            reward_val = sc.get("stamps", 2)
+        else:
+            reward_val = 3000
+    else:
+        choices = [
+            ("cashback", 500, "₹5 Cashback"),
+            ("cashback", 600, "₹6 Cashback"),
+            ("cashback", 700, "₹7 Cashback"),
+            ("cashback", 800, "₹8 Cashback"),
+            ("cashback", 900, "₹9 Cashback"),
+            ("cashback", 1000, "₹10 Cashback"),
+            ("free_delivery", 3000, "Free Delivery on Next Order"),
+            ("loyalty_stamps", 2, "+2 Loyalty Stamps"),
+        ]
+        weights = [60, 8, 7, 5, 5, 5, 5, 5]
+        picked = random.choices(choices, weights=weights, k=1)[0]
+        reward_type, reward_val, reward_title = picked
+
+    coupon_code = None
+    stamps_awarded = 0
+    reward_paise = 0
+
+    target_user_id = o.user_id
+    user_record = (await db.execute(select(User).where(User.id == target_user_id).with_for_update())).scalar_one()
+
+    if reward_type == "cashback":
+        reward_paise = reward_val
+        user_record.wallet_balance_paise = (user_record.wallet_balance_paise or 0) + reward_paise
+        message = f"Congratulations! ₹{reward_paise // 100} Cashback has been credited directly to your ICEPOPS wallet!"
+    elif reward_type == "free_delivery":
+        coupon_code = f"FREEDEL-{secrets.token_hex(2).upper()}"
+        free_del_coupon = Coupon(
+            code=coupon_code,
+            description=f"Free Delivery won from Order {o.order_number} scratch card",
+            discount_type="flat",
+            discount_value=30,  # ₹30 flat discount (delivery fee)
+            min_order_paise=0,
+            per_user_limit=1,
+            is_active=True,
+        )
+        db.add(free_del_coupon)
+        message = f"Woohoo! Free Delivery on your next order unlocked! Coupon: {coupon_code}"
+    elif reward_type == "loyalty_stamps":
+        stamps_awarded = 2
+        for _ in range(2):
+            syn_order_id = -1 * random.randint(1000000, 99999999)
+            db.add(LoyaltyStamp(user_id=target_user_id, order_id=syn_order_id, status="active"))
+        message = "Awesome! +2 Loyalty Stamps have been added to your stamp card!"
+
+    # Update order breakdown
+    bd["scratch_card"] = {
+        "claimed": True,
+        "reward_type": reward_type,
+        "amount_paise": reward_paise,
+        "title": reward_title,
+        "coupon_code": coupon_code,
+        "stamps": stamps_awarded,
+        "claimed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    o.pricing_breakdown = bd
+    flag_modified(o, "pricing_breakdown")
+
+    audit(db, user, "scratch_card_reward", "order", o.order_number, {
+        "reward_type": reward_type,
+        "amount_paise": reward_paise,
+        "title": reward_title,
+        "coupon_code": coupon_code,
+        "stamps": stamps_awarded,
+    }, client_ip(request))
+    await db.commit()
+
+    return {
+        "ok": True,
+        "claimed": True,
+        "reward_type": reward_type,
+        "amount_paise": reward_paise,
+        "title": reward_title,
+        "coupon_code": coupon_code,
+        "stamps": stamps_awarded,
+        "new_wallet_balance_paise": user_record.wallet_balance_paise,
+        "message": message,
+    }
