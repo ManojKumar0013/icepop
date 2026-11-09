@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, CreditCard, Landmark, Loader2, Smartphone } from "lucide-react";
+import { CheckCircle2, CreditCard, Landmark, Loader2, Smartphone, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { inr } from "@/lib/format";
@@ -28,8 +28,13 @@ export const PaidTick = () => {
 export const PayOnline = ({ o, autoStart, onChange }) => {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(o.payment_error || "");
+  const [walletBalance, setWalletBalance] = useState(0);
   const started = useRef(false);
   const { t } = useLang();
+
+  useEffect(() => {
+    api.get("/giftcards/wallet").then(({ data }) => setWalletBalance(data.wallet_balance_paise || 0)).catch(() => {});
+  }, []);
 
   const pay = useCallback(async () => {
     setBusy(true);
@@ -86,8 +91,32 @@ export const PayOnline = ({ o, autoStart, onChange }) => {
         </p>
       </div>
       {failed && <p data-testid="pay-online-error" className="rounded-2xl bg-mango/15 px-4 py-3 text-sm font-semibold">{t("Payment didn't go through")} — {failed.replace(/^Payment didn't go through\.?\s*/, "") || "please try again."} {t("No money was taken for this attempt.")}</p>}
+      
+      {walletBalance >= o.total_paise && (
+        <button
+          type="button"
+          data-testid="pay-wallet-button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const { data } = await api.post("/payments/wallet/pay", { order_number: o.order_number });
+              toast.success("Paid with ICEPOPS Wallet!");
+              onChange(data);
+            } catch (e) {
+              toast.error(errMsg(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 py-3.5 font-bold text-white transition-transform hover:-translate-y-0.5 disabled:opacity-60 shadow-sm"
+        >
+          <Wallet className="h-4 w-4" /> {t("Pay")} {inr(o.total_paise)} {t("from Wallet")} ({inr(walletBalance)} available)
+        </button>
+      )}
+
       <button data-testid="pay-online-button" onClick={pay} disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-full bg-strawberry py-4 font-bold text-white transition-transform hover:-translate-y-0.5 disabled:opacity-60">
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />}{failed ? t("Try again") : t("Pay")} {inr(o.total_paise)}
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />}{failed ? t("Try again") : t("Pay")} {inr(o.total_paise)} {t("via Razorpay")}
       </button>
       <button data-testid="pay-online-switch" onClick={switchTo} className="w-full text-center text-sm font-bold text-choco underline-offset-4 hover:underline">
         {t(o.fulfilment_type === "delivery" ? "Pay on delivery instead" : "Pay at pickup instead")}

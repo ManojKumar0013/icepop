@@ -4,15 +4,25 @@ import { api } from "@/lib/api";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUserState] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const setUser = useCallback((userData) => {
+    if (userData?.token) {
+      localStorage.setItem("icepops_token", userData.token);
+    } else if (userData === null) {
+      localStorage.removeItem("icepops_token");
+    }
+    setUserState(userData);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
-      setUser(data);
+      setUserState(data);
     } catch {
-      setUser(null);
+      localStorage.removeItem("icepops_token");
+      setUserState(null);
     } finally {
       setLoading(false);
     }
@@ -36,8 +46,9 @@ export function AuthProvider({ children }) {
   };
 
   const isAdmin = !!user?.roles?.includes("admin");
+  const isRider = !!(user?.roles?.includes("rider") || user?.roles?.includes("admin"));
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, refresh, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, setUser, loading, refresh, logout, isAdmin, isRider }}>
       {children}
     </AuthContext.Provider>
   );

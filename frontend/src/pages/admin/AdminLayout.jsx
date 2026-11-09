@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Link } from "react-router-dom";
-import { BadgePercent, Boxes, ClipboardList, LayoutDashboard, Monitor, PartyPopper, Receipt, Settings, ScrollText, Star, Store, Ticket } from "lucide-react";
+import { BadgePercent, Bike, Boxes, ClipboardList, LayoutDashboard, Monitor, Receipt, Settings, ScrollText, Star, Store, Ticket } from "lucide-react";
 import { Logo } from "@/components/site/Logo";
 import { NewOrderAlert } from "@/components/admin/NewOrderAlert";
 
@@ -8,7 +8,7 @@ const NAV = [
   { to: "/admin/pos", label: "Counter POS", icon: Receipt, id: "pos" },
   { to: "/admin/kds", label: "Kitchen (KDS)", icon: Monitor, id: "kds" },
   { to: "/admin/orders", label: "Orders", icon: ClipboardList, id: "orders" },
-  { to: "/admin/catering", label: "Party Catering", icon: PartyPopper, id: "catering" },
+  { to: "/rider", label: "Rider Deliveries", icon: Bike, id: "rider" },
   { to: "/admin/products", label: "Products & stock", icon: Boxes, id: "products" },
   { to: "/admin/coupons", label: "Coupons", icon: Ticket, id: "coupons" },
   { to: "/admin/promotions", label: "Promotions", icon: BadgePercent, id: "promotions" },

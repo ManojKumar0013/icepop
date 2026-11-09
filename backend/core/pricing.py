@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import IST
+from core.config import DEV_ALLOW_CLOSED_ORDERS, IST
 from core.models import (
     Category, Coupon, CouponCategory, CouponProduct, CouponRedemption, Inventory, Order, Product,
     ProductVariant, Promotion, PromotionRedemption, DeliveryZone, User,
@@ -248,7 +248,11 @@ async def build_quote(db: AsyncSession, user: Optional[User], items: list, coupo
             zone = (await db.execute(select(DeliveryZone).where(DeliveryZone.pincode == pincode.strip(),
                                                                DeliveryZone.is_active.is_(True)))).scalar_one_or_none()
             if not zone:
-                errors.append(f"Sorry, we don't deliver to PIN code {pincode} yet. Try pickup instead.")
+                if DEV_ALLOW_CLOSED_ORDERS:
+                    zone_name = "Delivery Area"
+                    fee = settings.default_delivery_fee_paise
+                else:
+                    errors.append(f"Sorry, we don't deliver to PIN code {pincode} yet. Try pickup instead.")
             else:
                 zone_name = zone.name
                 if zone.delivery_fee_paise is not None:

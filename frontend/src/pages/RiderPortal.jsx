@@ -2,18 +2,25 @@ import { useEffect, useState, useCallback } from "react";
 import { Bike, Navigation, Phone, CheckCircle2, ShieldCheck, MapPin, Package, RefreshCw, KeyRound, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { formatPaise } from "@/lib/utils";
 
 export default function RiderPortal() {
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [riderName, setRiderName] = useState(() => localStorage.getItem("icepops_rider_name") || "");
-  const [riderPhone, setRiderPhone] = useState(() => localStorage.getItem("icepops_rider_phone") || "");
+  const [riderName, setRiderName] = useState(() => user?.name || localStorage.getItem("icepops_rider_name") || "");
+  const [riderPhone, setRiderPhone] = useState(() => user?.phone || localStorage.getItem("icepops_rider_phone") || "");
   const [activeTab, setActiveTab] = useState("active");
   const [verifyingOrder, setVerifyingOrder] = useState(null);
   const [otpInput, setOtpInput] = useState("");
   const [verifyNote, setVerifyNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user?.name && !riderName) setRiderName(user.name);
+    if (user?.phone && !riderPhone) setRiderPhone(user.phone);
+  }, [user, riderName, riderPhone]);
 
   const saveRiderProfile = (name, phone) => {
     setRiderName(name);
@@ -40,16 +47,18 @@ export default function RiderPortal() {
   }, [loadOrders]);
 
   const handleClaim = async (orderNumber) => {
-    if (!riderName.trim() || !riderPhone.trim()) {
-      toast.error("Please enter your Rider Name and Phone number first");
+    const finalName = riderName.trim() || user?.name || "Delivery Partner";
+    const finalPhone = riderPhone.trim() || user?.phone || "";
+    if (!finalPhone) {
+      toast.error("Please enter your mobile phone number in your profile above");
       return;
     }
-    saveRiderProfile(riderName, riderPhone);
+    saveRiderProfile(finalName, finalPhone);
 
     try {
       await api.post(`/rider/orders/${orderNumber}/claim`, {
-        rider_name: riderName.trim(),
-        rider_phone: riderPhone.trim(),
+        rider_name: finalName,
+        rider_phone: finalPhone,
       });
       toast.success(`You claimed Order #${orderNumber}! Drive safely.`);
       loadOrders();
@@ -108,22 +117,24 @@ export default function RiderPortal() {
         </div>
 
         {/* Rider Profile Card */}
-        <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-sm border border-white/10">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-cream/60 mb-2">My Rider Profile</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-            <input
-              type="text"
-              value={riderName}
-              onChange={(e) => saveRiderProfile(e.target.value, riderPhone)}
-              placeholder="Your Full Name"
-              className="rounded-xl bg-white/20 px-3 py-2 text-cream placeholder-cream/40 focus:outline-none focus:ring-1 focus:ring-strawberry"
-            />
+        <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-sm border border-white/10 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4" /> Authorized Delivery Partner
+            </p>
+            <p className="font-display font-bold text-cream text-base mt-0.5">{user?.name || riderName}</p>
+            <p className="text-xs text-cream/70">{user?.email}</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-cream/80 font-semibold flex items-center gap-1">
+              <Phone className="h-3.5 w-3.5 text-strawberry" /> Phone:
+            </span>
             <input
               type="tel"
               value={riderPhone}
-              onChange={(e) => saveRiderProfile(riderName, e.target.value)}
+              onChange={(e) => saveRiderProfile(user?.name || riderName, e.target.value)}
               placeholder="Your Phone Number"
-              className="rounded-xl bg-white/20 px-3 py-2 text-cream placeholder-cream/40 focus:outline-none focus:ring-1 focus:ring-strawberry"
+              className="rounded-xl bg-white/20 px-3 py-1.5 text-cream placeholder-cream/40 focus:outline-none focus:ring-1 focus:ring-strawberry max-w-[150px]"
             />
           </div>
         </div>
@@ -154,7 +165,7 @@ export default function RiderPortal() {
         {(activeTab === "active" ? activeDeliveries : completedDeliveries).map((order) => {
           const isOut = order.status === "out_for_delivery";
           const isDelivered = order.status === "delivered";
-          const isCod = order.payment_method === "cod" && order.payment_status !== "paid";
+          const isCod = (order.payment_method === "cod" || order.payment_method === "pay_on_delivery") && order.payment_status !== "paid";
 
           return (
             <div
@@ -189,7 +200,7 @@ export default function RiderPortal() {
                       isCod ? "bg-red-100 text-red-700" : "bg-emerald-50 text-emerald-700"
                     }`}
                   >
-                    {isCod ? "Collect Cash (COD)" : "Paid Online"}
+                    {isCod ? "Collect Cash (COD)" : order.payment_method === "wallet" ? "Paid via Wallet" : "Paid Online"}
                   </span>
                 </div>
               </div>
@@ -294,7 +305,7 @@ export default function RiderPortal() {
               OTP displayed on their ICEPOPS screen or SMS.
             </p>
 
-            {verifyingOrder.payment_method === "cod" && verifyingOrder.payment_status !== "paid" && (
+            {(verifyingOrder.payment_method === "cod" || verifyingOrder.payment_method === "pay_on_delivery") && verifyingOrder.payment_status !== "paid" && (
               <div className="rounded-2xl bg-red-50 border border-red-200 p-3 text-xs text-red-800 space-y-1">
                 <p className="font-bold">⚠️ Cash on Delivery (COD)</p>
                 <p>Collect {formatPaise(verifyingOrder.total_paise)} before handing over the frozen box.</p>

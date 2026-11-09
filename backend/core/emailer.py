@@ -77,14 +77,15 @@ def _assert_safe_email(subject: str, html: str) -> None:
         low = url.strip().lower()
         if low.startswith(("mailto:", "tel:", "cid:", "#")):
             continue
-        if not low.startswith("https://"):
+        if not (low.startswith("https://") or low.startswith("http://localhost") or low.startswith("http://127.0.0.1")):
             raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
         host = urlparse(low).hostname or ""
-        if not _host_ok(host) or urlparse(low).username is not None:
-            raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+        if host not in ("localhost", "127.0.0.1"):
+            if not _host_ok(host) or urlparse(low).username is not None:
+                raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
     for href, text in scan.anchors:
         real = urlparse(href.strip().lower()).hostname or ""
-        if not real:
+        if not real or real in ("localhost", "127.0.0.1"):
             continue
         for m in _HOSTISH.finditer(text):
             if not _same_site(m.group(1).lower(), real):

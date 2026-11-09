@@ -15,6 +15,8 @@ CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localh
 SESSION_COOKIE = "icepops_session"
 SESSION_DAYS = 7
 CSRF_HEADER = "x-csrf-guard"
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "").lower() in ("true", "1") or APP_PUBLIC_URL.startswith("https://")
+DEV_ALLOW_CLOSED_ORDERS = os.environ.get("DEV_ALLOW_CLOSED_ORDERS", "").lower() in ("true", "1")
 
 # Razorpay Configuration
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_Txd5kzeL6T6dBG")

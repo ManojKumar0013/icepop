@@ -11,9 +11,19 @@ from core.db import get_db
 from core.loyalty import loyalty_promo, loyalty_text
 from core.models import LoyaltyStamp, Order, OrderItem, OrderStatusHistory, Payment, User
 from core.notify import deliver_external, notify_order_event, user_lang
-from core.security import get_optional_user
+from core.security import require_user
 
 router = APIRouter(prefix="/rider", tags=["rider"])
+
+
+async def require_rider(user: User = Depends(require_user)) -> User:
+    """Security check: only authorized staff with 'rider' or 'admin' roles can access rider features."""
+    if "rider" not in user.role_names and "admin" not in user.role_names:
+        raise HTTPException(
+            status_code=403,
+            detail="Access restricted: You do not have delivery partner permissions. Please contact the administrator.",
+        )
+    return user
 
 
 class RiderClaimIn(BaseModel):
@@ -28,7 +38,10 @@ class RiderVerifyIn(BaseModel):
 
 
 @router.get("/orders")
-async def list_rider_orders(db: AsyncSession = Depends(get_db)):
+async def list_rider_orders(
+    rider: User = Depends(require_rider),
+    db: AsyncSession = Depends(get_db),
+):
     """Active delivery queue for riders: ready for pickup, out for delivery, and recently delivered."""
     stmt = (
         select(Order)
@@ -94,7 +107,7 @@ async def claim_delivery(
     number: str,
     body: RiderClaimIn,
     background: BackgroundTasks,
-    user: Optional[User] = Depends(get_optional_user),
+    rider: User = Depends(require_rider),
     db: AsyncSession = Depends(get_db),
 ):
     """Assign delivery partner to an order and move status to out_for_delivery."""
@@ -117,7 +130,7 @@ async def claim_delivery(
             from_status=prev,
             to_status="out_for_delivery",
             note=f"Assigned to delivery rider {order.rider_name} ({order.rider_phone})",
-            actor_user_id=user.id if user else None,
+            actor_user_id=rider.id,
         )
     )
 
@@ -139,7 +152,7 @@ async def verify_and_complete_delivery(
     number: str,
     body: RiderVerifyIn,
     background: BackgroundTasks,
-    user: Optional[User] = Depends(get_optional_user),
+    rider: User = Depends(require_rider),
     db: AsyncSession = Depends(get_db),
 ):
     """Verify customer 4-digit OTP and mark order delivered with instant loyalty stamp trigger."""
@@ -190,7 +203,7 @@ async def verify_and_complete_delivery(
             from_status=prev,
             to_status="delivered",
             note=note_content,
-            actor_user_id=user.id if user else None,
+            actor_user_id=rider.id,
         )
     )
 

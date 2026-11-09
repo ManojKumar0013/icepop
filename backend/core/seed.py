@@ -89,7 +89,7 @@ PAYMENT_METHODS = [
 
 async def seed(db: AsyncSession) -> None:
     roles = {r.name: r for r in (await db.execute(select(Role))).scalars()}
-    for name in ("admin", "customer"):
+    for name in ("admin", "customer", "rider"):
         if name not in roles:
             roles[name] = Role(name=name)
             db.add(roles[name])
@@ -101,6 +101,12 @@ async def seed(db: AsyncSession) -> None:
                     roles=[roles["admin"], roles["customer"]]))
     elif "admin" not in admin.role_names:
         db.add(UserRole(user_id=admin.id, role_id=roles["admin"].id))
+
+    # Grant delivery partner role to specified rider email
+    rider_email = "manojkumarbondada123@gmail.com"
+    r_user = (await db.execute(select(User).where(User.email == rider_email))).scalar_one_or_none()
+    if r_user and "rider" not in r_user.role_names and "rider" in roles:
+        db.add(UserRole(user_id=r_user.id, role_id=roles["rider"].id))
 
     existing_settings = await db.get(BusinessSettings, 1)
     if existing_settings and any("coming soon" in (m.get("label") or "") for m in existing_settings.payment_methods or []):

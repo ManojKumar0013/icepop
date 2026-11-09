@@ -396,7 +396,7 @@ class Review(Timestamped, Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(150))
     body: Mapped[str] = mapped_column(String(500))
@@ -407,7 +407,7 @@ class Notification(Base):
 
 class NotificationOutbox(Base):
     __tablename__ = "notification_outbox"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     channel: Mapped[str] = mapped_column(String(20))
     recipient: Mapped[str] = mapped_column(String(255))
     template: Mapped[str] = mapped_column(String(50))
@@ -432,7 +432,7 @@ class UploadedFile(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     actor_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     action: Mapped[str] = mapped_column(String(60))
     entity: Mapped[str] = mapped_column(String(40))

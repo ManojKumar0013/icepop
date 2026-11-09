@@ -124,6 +124,51 @@ async def switch_method(body: SwitchIn, user: User = Depends(require_user), db: 
     return order_out(o, await load_history(db, o.id))
 
 
+@router.post("/wallet/pay")
+async def pay_with_wallet(body: OrderRef, background: BackgroundTasks, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
+    o = await get_owned_order(db, user, body.order_number, lock=True)
+    if o.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if o.payment_status == "paid":
+        raise HTTPException(status_code=400, detail="This order is already paid.")
+    if o.status in CLOSED:
+        raise HTTPException(status_code=400, detail="This order is cancelled.")
+
+    user_rec = (await db.execute(select(User).where(User.id == user.id).with_for_update())).scalar_one()
+    wallet_balance = user_rec.wallet_balance_paise or 0
+    if wallet_balance < o.total_paise:
+        shortage = o.total_paise - wallet_balance
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient wallet balance. You have ₹{wallet_balance // 100}, but order total is ₹{o.total_paise // 100} (short by ₹{shortage // 100}).",
+        )
+
+    user_rec.wallet_balance_paise -= o.total_paise
+    o.payment_method = "wallet"
+    o.payment_status = "paid"
+
+    p = await _payment(db, o.id, lock=True)
+    if not p:
+        p = Payment(order_id=o.id, provider="wallet", method="wallet", amount_paise=o.total_paise, status="paid")
+        db.add(p)
+    else:
+        p.provider = "wallet"
+        p.method = "wallet"
+        p.status = "paid"
+        p.amount_paise = o.total_paise
+        p.details = {**(p.details or {}), "paid_from_wallet": True, "remaining_wallet_paise": user_rec.wallet_balance_paise}
+
+    db.add(OrderStatusHistory(
+        order_id=o.id,
+        from_status=o.status,
+        to_status=o.status,
+        note=f"Paid ₹{o.total_paise // 100} using ICEPOPS Wallet",
+        actor_user_id=user.id,
+    ))
+    await _after_paid(db, o, p, background)
+    return order_out(o, await load_history(db, o.id))
+
+
 @router.post("/razorpay/webhook")
 async def webhook(request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET")

@@ -7,12 +7,13 @@ from core.config import CORS_ORIGINS, CSRF_HEADER, DATABASE_URL  # noqa: loads .
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
 from core.db import Base, SessionLocal, engine
 from core import models  # noqa: F401
 from core.seed import seed
-from routes import admin, admin_catalog, admin_settings, auth, cart, catalog, catering, engagement, giftcards, orders, payments, pos, rider, subscriptions
+from routes import admin, admin_catalog, admin_settings, auth, cart, catalog, engagement, giftcards, orders, payments, pos, rider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ async def health():
 
 
 for r in (auth.router, catalog.router, cart.router, orders.router, admin.router, admin_catalog.router, admin_settings.router,
-          payments.router, engagement.router, pos.router, rider.router, catering.router, subscriptions.router, giftcards.router):
+          payments.router, engagement.router, pos.router, rider.router, giftcards.router):
     api.include_router(r)
 app.include_router(api)
 
@@ -37,16 +38,24 @@ CSRF_EXEMPT = {"/api/payments/razorpay/webhook"}
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
     # CSRF: browsers can't add custom headers cross-site without a CORS preflight we don't allow.
     if (request.method in UNSAFE and request.url.path.startswith("/api") and request.url.path not in CSRF_EXEMPT
             and request.headers.get(CSRF_HEADER) != "1"):
-        return JSONResponse({"detail": "Missing security header"}, status_code=403)
+        res = JSONResponse({"detail": "Missing security header"}, status_code=403)
+        if origin:
+            res.headers["Access-Control-Allow-Origin"] = origin
+            res.headers["Access-Control-Allow-Credentials"] = "true"
+        return res
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if request.url.path.startswith("/api") and not request.url.path.startswith("/api/files/"):
         response.headers["Cache-Control"] = "no-store"
+    if origin and "Access-Control-Allow-Origin" not in response.headers:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
@@ -58,6 +67,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    res = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    origin = request.headers.get("origin")
+    if origin:
+        res.headers["Access-Control-Allow-Origin"] = origin
+        res.headers["Access-Control-Allow-Credentials"] = "true"
+    return res
 
 
 @app.exception_handler(RequestValidationError)
@@ -74,7 +93,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         else:
             messages.append(msg)
     clean_detail = ", ".join(messages)
-    return JSONResponse(status_code=400, content={"detail": clean_detail})
+    res = JSONResponse(status_code=400, content={"detail": clean_detail})
+    origin = request.headers.get("origin")
+    if origin:
+        res.headers["Access-Control-Allow-Origin"] = origin
+        res.headers["Access-Control-Allow-Credentials"] = "true"
+    return res
 
 
 @app.on_event("startup")
@@ -103,3 +127,25 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await engine.dispose()
+
+
+if __name__ == "__main__":
+    import os
+    import socket
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    try:
+        # Create dual-stack socket so both IPv4 (127.0.0.1) and IPv6 (::1/localhost) work on Windows
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        sock.bind(("::", port))
+        sock.listen()
+        print(f"Dual-stack ICEPOPS server listening on port {port} (IPv4 and IPv6)...")
+        config = uvicorn.Config(app, log_level="info")
+        server = uvicorn.Server(config)
+        server.run(sockets=[sock])
+    except Exception as e:
+        print(f"Dual-stack bind notice ({e}), starting standard uvicorn on port {port}...")
+        uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
+

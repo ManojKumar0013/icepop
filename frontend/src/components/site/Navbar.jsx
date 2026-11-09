@@ -11,8 +11,6 @@ import { LangSwitch, useLang } from "@/context/LangContext";
 const LINKS = [
   { to: "/", label: "Home", id: "home" },
   { to: "/menu", label: "Menu", id: "menu" },
-  { to: "/catering", label: "Party Packs", id: "catering" },
-  { to: "/subscriptions", label: "Club", id: "club" },
   { to: "/giftcards", label: "Gift Cards", id: "giftcards" },
   { to: "/orders", label: "Track order", id: "track" },
 ];
@@ -36,7 +34,7 @@ function useUnread(user) {
   return unread;
 }
 
-const UserMenu = ({ user, isAdmin, logout }) => {
+const UserMenu = ({ user, isAdmin, isRider, logout }) => {
   const navigate = useNavigate();
   const { t } = useLang();
   return (
@@ -50,6 +48,7 @@ const UserMenu = ({ user, isAdmin, logout }) => {
         <DropdownMenuItem data-testid="nav-account-link" onClick={() => navigate("/account")}><User className="mr-2 h-4 w-4" />{t("My account")}</DropdownMenuItem>
         <DropdownMenuItem data-testid="nav-orders-link" onClick={() => navigate("/orders")}><Package className="mr-2 h-4 w-4" />{t("My orders")}</DropdownMenuItem>
         <DropdownMenuItem data-testid="nav-giftcards-link" onClick={() => navigate("/giftcards")}><Gift className="mr-2 h-4 w-4" />{t("Gift vouchers & wallet")}</DropdownMenuItem>
+        {isRider && <DropdownMenuItem data-testid="nav-rider-link" onClick={() => navigate("/rider")}><Bike className="mr-2 h-4 w-4" />Delivery partner</DropdownMenuItem>}
         {isAdmin && <DropdownMenuItem data-testid="nav-admin-link" onClick={() => navigate("/admin")}><LayoutDashboard className="mr-2 h-4 w-4" />Seller dashboard</DropdownMenuItem>}
         <DropdownMenuSeparator />
         <DropdownMenuItem data-testid="nav-logout-button" onClick={async () => { await logout(); navigate("/"); }}><LogOut className="mr-2 h-4 w-4" />{t("Log out")}</DropdownMenuItem>
@@ -59,7 +58,7 @@ const UserMenu = ({ user, isAdmin, logout }) => {
 };
 
 export const Navbar = () => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isRider, logout } = useAuth();
   const { count } = useCart();
   const unread = useUnread(user);
   const [open, setOpen] = useState(false);
@@ -87,7 +86,7 @@ export const Navbar = () => {
             <ShoppingBag className="h-4 w-4" />
             <span data-testid="nav-cart-count" className="text-sm font-bold">{count}</span>
           </Link>
-          {user ? <UserMenu user={user} isAdmin={isAdmin} logout={logout} /> : (
+          {user ? <UserMenu user={user} isAdmin={isAdmin} isRider={isRider} logout={logout} /> : (
             <Link to="/login" data-testid="nav-login-link" className="hidden rounded-full border border-choco/20 px-4 py-2 text-sm font-semibold hover:bg-white sm:block">{t("Log in")}</Link>
           )}
           <button data-testid="nav-mobile-toggle" className="grid h-10 w-10 place-items-center rounded-full md:hidden" onClick={() => setOpen(!open)} aria-label="Toggle menu">

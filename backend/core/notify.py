@@ -133,11 +133,18 @@ async def deliver_external(order_id: int, event: str) -> None:
             if promo and promo.is_enabled:
                 loyalty = await loyalty_status(db, order.user_id, promo)
         subject, html = customer_order_email(order, event, settings, loyalty, await user_lang(db, order.user_id))
-        try:
-            pid = await send_email(to=order.customer_email, subject=subject, html=html)
-            await _record(db, "email", order.customer_email, event, order.order_number, "sent", provider_id=pid)
-        except (EmailError, ValueError) as e:
-            await _record(db, "email", order.customer_email, event, order.order_number, "failed", error=str(e)[:300])
+        # Deliver customer email if a valid recipient is available
+        if order.customer_email and not order.customer_email.endswith("@customer.icepops.in") and "@" in order.customer_email:
+            try:
+                pid = await send_email(to=order.customer_email, subject=subject, html=html)
+                await _record(db, "email", order.customer_email, event, order.order_number, "sent", provider_id=pid)
+                logger.info("Order %s customer email sent to %s (id: %s)", order.order_number, order.customer_email, pid)
+            except (EmailError, ValueError) as e:
+                logger.warning("Order %s customer email failed: %s", order.order_number, e)
+                await _record(db, "email", order.customer_email, event, order.order_number, "failed", error=str(e)[:300])
+        else:
+            await _record(db, "email", order.customer_email or "unspecified", event, order.order_number, "skipped",
+                          error="No real customer email provided (guest phone order)")
         await _record(db, "whatsapp", order.customer_phone, event, order.order_number, "not_connected",
                       error="WhatsApp provider not connected yet")
         if event == "placed":
@@ -145,7 +152,9 @@ async def deliver_external(order_id: int, event: str) -> None:
                 s_subject, s_html = seller_new_order_email(order, settings)
                 pid = await send_email(to=ADMIN_EMAIL, subject=s_subject, html=s_html)
                 await _record(db, "email", ADMIN_EMAIL, "seller_new_order", order.order_number, "sent", provider_id=pid)
+                logger.info("Order %s seller alert email sent to admin %s (id: %s)", order.order_number, ADMIN_EMAIL, pid)
             except (EmailError, ValueError) as e:
+                logger.warning("Order %s seller alert email failed: %s", order.order_number, e)
                 await _record(db, "email", ADMIN_EMAIL, "seller_new_order", order.order_number, "failed", error=str(e)[:300])
         await db.commit()
 

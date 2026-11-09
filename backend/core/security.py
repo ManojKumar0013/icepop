@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import SESSION_COOKIE, SESSION_DAYS
+from core.config import COOKIE_SECURE, SESSION_COOKIE, SESSION_DAYS
 from core.db import get_db
 from core.models import AuditLog, Session, User
 
@@ -80,7 +80,7 @@ async def create_session(db: AsyncSession, user: User, response: Response) -> st
     db.add(Session(user_id=user.id, token_hash=sha256(token),
                    expires_at=datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)))
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True,
-                        secure=True, samesite="lax", path="/")
+                        secure=COOKIE_SECURE, samesite="lax", path="/")
     return token
 
 
@@ -125,7 +125,12 @@ def audit(db: AsyncSession, actor: Optional[User], action: str, entity: str, ent
                     entity_id=str(entity_id) if entity_id is not None else None, details=details, ip=ip))
 
 
-def user_out(user: User) -> dict:
-    return {"id": user.id, "name": user.name, "email": user.email, "phone": user.phone,
-            "picture": user.picture, "roles": user.role_names, "has_password": bool(user.password_hash),
-            "language": user.language or "en"}
+def user_out(user: User, token: Optional[str] = None) -> dict:
+    res = {"id": user.id, "name": user.name, "email": user.email, "phone": user.phone,
+           "picture": user.picture, "roles": user.role_names, "has_password": bool(user.password_hash),
+           "language": user.language or "en",
+           "wallet_balance_paise": user.wallet_balance_paise or 0,
+           "referral_code": user.referral_code}
+    if token:
+        res["token"] = token
+    return res

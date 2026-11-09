@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Info, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { CheckCircle2, Info, Minus, Plus, ShoppingBag, Sparkles, Trash2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useQuote } from "@/hooks/useQuote";
@@ -90,14 +90,21 @@ export const OfferNotes = ({ q }) => (
   <>
     {q.free_delivery_remaining_paise > 0 && (
       <div className="rounded-2xl bg-white p-3.5 border border-border" data-testid="free-delivery-progress">
-        <p className="mb-1.5 text-xs font-bold">Add {inr(q.free_delivery_remaining_paise)} more for FREE delivery</p>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-pistachio transition-[width] duration-500" style={{ width: `${Math.max(5, 100 - (q.free_delivery_remaining_paise / (q.subtotal_paise - q.discount_paise + q.free_delivery_remaining_paise)) * 100)}%` }} />
+        <p className="mb-1.5 text-xs font-bold text-emerald-950">Add {inr(q.free_delivery_remaining_paise)} more for FREE delivery</p>
+        <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
+          <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500" style={{ width: `${Math.max(5, 100 - (q.free_delivery_remaining_paise / (q.subtotal_paise - q.discount_paise + q.free_delivery_remaining_paise)) * 100)}%` }} />
         </div>
       </div>
     )}
     {q.notes.filter((n) => !n.startsWith("Add ₹") || !n.includes("FREE delivery")).map((n, i) => (
-      <p key={i} data-testid={`offer-note-${i}`} className="flex gap-2 rounded-2xl bg-pink-light/70 px-3.5 py-2.5 text-xs font-semibold"><Info className="h-4 w-4 shrink-0 text-strawberry" />{n}</p>
+      <div
+        key={i}
+        data-testid={`offer-note-${i}`}
+        className="flex items-start gap-2.5 rounded-2xl border border-emerald-200/90 bg-emerald-50/90 p-3 text-xs font-semibold text-emerald-900 shadow-2xs"
+      >
+        <Sparkles className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+        <span className="leading-snug">{n}</span>
+      </div>
     ))}
   </>
 );
@@ -211,6 +218,7 @@ export default function Cart() {
           </form>
           {q.coupon_error && <p data-testid="cart-coupon-error" className="text-xs font-semibold text-strawberry">{q.coupon_error}</p>}
           {coupon && q.coupon_code && <p data-testid="cart-coupon-success" className="text-xs font-semibold text-pistachio">Coupon {q.coupon_code} applied</p>}
+          <OffersList applied={q.coupon_code} onApply={applyCoupon} appliedCodes={q.discounts.map((d) => d.code).concat(q.delivery_savings_paise ? ["free_delivery"] : [])} />
           <OfferNotes q={q} />
           {user && <RewardToggle q={q} useReward={useReward} setUseReward={setUseReward} />}
           <div className={`rounded-2xl border border-border bg-white p-5 shadow-sm transition-opacity ${loading ? "opacity-60" : ""}`}><PriceSummary q={q} fulfilment={fulfilment} /></div>
@@ -221,7 +229,6 @@ export default function Cart() {
             {user ? <T s="Proceed to checkout" /> : <T s="Log in to checkout" />}
           </button>
           <WhatsAppCartButton q={q} fulfilment={fulfilment} />
-          <OffersList applied={q.coupon_code} onApply={applyCoupon} appliedCodes={q.discounts.map((d) => d.code).concat(q.delivery_savings_paise ? ["free_delivery"] : [])} />
         </aside>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, MessageSquareReply, Star } from "lucide-react";
+import { CheckCircle2, Loader2, MessageSquareReply, Star } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { useLang } from "@/context/LangContext";
@@ -7,20 +7,70 @@ import { useLang } from "@/context/LangContext";
 export const Stars = ({ value, size = "h-4 w-4", onPick, testid = "stars" }) => (
   <div className="flex gap-1" data-testid={testid} aria-label={`${value || 0} out of 5 stars`}>
     {[1, 2, 3, 4, 5].map((n) => {
-      const icon = <Star className={`${size} ${n <= Math.round(value || 0) ? "fill-mango text-mango" : "text-choco/20"}`} />;
+      const icon = <Star className={`${size} ${n <= Math.round(value || 0) ? "fill-amber-400 text-amber-400" : "text-choco/20"}`} />;
       return onPick ? <button type="button" key={n} aria-label={`${n} star${n > 1 ? "s" : ""}`} data-testid={`${testid}-${n}`} onClick={() => onPick(n)} className="p-1 transition-transform hover:scale-110">{icon}</button> : <span key={n}>{icon}</span>;
     })}
   </div>
 );
 
-export const ReviewCard = ({ r }) => (
-  <figure data-testid={`review-${r.id}`} className="rounded-3xl bg-cream-deep p-6">
-    <Stars value={r.rating} />
-    {r.comment && <blockquote className="mt-3 text-sm">“{r.comment}”</blockquote>}
-    <figcaption className="mt-3 text-sm font-bold">{r.name}{r.product && <span className="font-normal text-muted-foreground"> · {r.product}</span>}</figcaption>
-    {r.reply && <p className="mt-3 flex gap-2 rounded-2xl bg-white p-3 text-xs"><MessageSquareReply className="h-4 w-4 shrink-0 text-strawberry" /><span><b>ICEPOPS:</b> {r.reply}</span></p>}
-  </figure>
-);
+export const ReviewCard = ({ r }) => {
+  const initial = (r.name || "C").trim().charAt(0).toUpperCase();
+  return (
+    <figure
+      data-testid={`review-${r.id}`}
+      className="rounded-3xl bg-white border border-border p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between"
+    >
+      <div className="space-y-3">
+        {/* Header: Customer Avatar + Name + Verified Badge */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-light via-pink/40 to-amber-100 flex items-center justify-center font-display font-extrabold text-strawberry text-base shadow-sm">
+              {initial}
+            </div>
+            <div>
+              <figcaption className="font-display font-bold text-choco text-sm flex items-center gap-1.5">
+                {r.name}
+              </figcaption>
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                <span>Verified Buyer</span>
+              </div>
+            </div>
+          </div>
+          <Stars value={r.rating} size="h-4 w-4" />
+        </div>
+
+        {/* Product tag pill */}
+        {r.product && (
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-cream/70 border border-border px-3 py-1 text-[11px] font-bold text-choco/80">
+            <span>🍡</span>
+            <span>{r.product}</span>
+          </div>
+        )}
+
+        {/* Review comment quote */}
+        {r.comment && (
+          <blockquote className="text-xs sm:text-sm text-choco/85 leading-relaxed font-normal">
+            “{r.comment}”
+          </blockquote>
+        )}
+      </div>
+
+      {/* Owner reply */}
+      {r.reply && (
+        <div className="mt-4 flex gap-2.5 rounded-2xl bg-cream/50 border border-border p-3 text-xs text-choco/80">
+          <MessageSquareReply className="h-4 w-4 shrink-0 text-strawberry mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold text-choco block text-[11px] uppercase tracking-wide">
+              ICEPOPS Kitchen
+            </span>
+            <p className="leading-relaxed">{r.reply}</p>
+          </div>
+        </div>
+      )}
+    </figure>
+  );
+};
 
 export const RateOrder = ({ o, onDone }) => {
   const [rating, setRating] = useState(0);

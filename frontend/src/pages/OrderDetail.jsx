@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, PartyPopper, RefreshCw } from "lucide-react";
+import { ArrowLeft, Lock, PartyPopper, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { PageLoader } from "@/components/site/Guards";
@@ -13,7 +13,7 @@ import { PaidTick, PayOnline } from "@/components/site/PayOnline";
 import { RateOrder } from "@/components/site/Reviews";
 import { useLang } from "@/context/LangContext";
 
-const METHOD_LABELS = { pay_on_delivery: "Pay on delivery", pay_at_pickup: "Pay at pickup", online: "Online (UPI / card / netbanking)" };
+const METHOD_LABELS = { pay_on_delivery: "Pay on delivery", pay_at_pickup: "Pay at pickup", online: "Online (UPI / card / netbanking)", wallet: "ICEPOPS Wallet" };
 
 const toQuote = (o) => ({ ...o, lines: o.items, delivery_savings_paise: o.delivery_savings_paise || 0 });
 
@@ -28,7 +28,8 @@ export default function OrderDetail() {
     load();
     let es = null;
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "";
+      const rawUrl = process.env.REACT_APP_BACKEND_URL || "";
+      const backendUrl = rawUrl.replace("://localhost:", "://127.0.0.1:").replace("://localhost/", "://127.0.0.1/");
       es = new EventSource(`${backendUrl}/api/orders/events`, { withCredentials: true });
       es.addEventListener("order_update", (e) => {
         try {
@@ -89,12 +90,34 @@ export default function OrderDetail() {
           <section className="rounded-3xl border border-border bg-white px-6"><CartLines lines={lines} /></section>
         </div>
         <aside className="space-y-4">
-          {o.fulfilment_type === "delivery" && o.delivery_otp && !["delivered", "cancelled", "refunded"].includes(o.status) && (
-            <div data-testid="delivery-otp-card" className="rounded-3xl border-2 border-strawberry/30 bg-gradient-to-br from-pink-light/80 to-cream p-5 text-center space-y-1 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-wider text-strawberry">Delivery Confirmation OTP</p>
-              <p className="text-3xl font-mono font-black text-choco tracking-widest">{o.delivery_otp}</p>
-              <p className="text-[11px] text-choco/70">Share this 4-digit code with your delivery rider upon doorstep arrival.</p>
-            </div>
+          {o.fulfilment_type === "delivery" && !["delivered", "cancelled", "refunded"].includes(o.status) && (
+            o.delivery_otp ? (
+              <div data-testid="delivery-otp-card" className="rounded-3xl border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-50 to-cream p-5 text-center space-y-1.5 shadow-sm">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100/90 px-3 py-0.5 text-xs font-bold text-emerald-800">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Delivery Confirmation OTP</span>
+                </div>
+                <p className="text-4xl font-mono font-black text-choco tracking-widest pt-1">{o.delivery_otp}</p>
+                <p className="text-xs font-medium text-choco/75">Share this 4-digit code with your delivery rider upon doorstep arrival.</p>
+              </div>
+            ) : (
+              <div data-testid="delivery-otp-pending-card" className="rounded-3xl border border-border bg-white p-5 text-center space-y-2 shadow-xs">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Delivery OTP Protection</p>
+                  <p className="mt-1 text-sm font-bold text-choco">
+                    {o.payment_method === "online" && o.payment_status !== "paid"
+                      ? "Unlocks after online payment is completed"
+                      : "Unlocks once the parlour confirms your order"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    For your security, OTP is verified only when your fresh ice pops arrive at your doorstep.
+                  </p>
+                </div>
+              </div>
+            )
           )}
           {o.rider_name && !["delivered", "cancelled"].includes(o.status) && (
             <div className="rounded-2xl bg-sky-50 border border-sky-100 p-3.5 text-xs text-sky-900 flex items-center justify-between">
@@ -112,7 +135,7 @@ export default function OrderDetail() {
           {o.payment_method === "online" && o.payment_status === "pending" && !["cancelled", "refund_pending", "refunded"].includes(o.status) && (
             <PayOnline o={o} autoStart={params.get("pay") === "1"} onChange={(d) => setO((prev) => ({ ...prev, ...d }))} />
           )}
-          {o.payment_method === "online" && o.payment_status === "paid" && <PaidTick />}
+          {(o.payment_method === "online" || o.payment_method === "wallet") && o.payment_status === "paid" && <PaidTick />}
           <RateOrder o={o} onDone={setO} />
           <div className="rounded-3xl border border-border bg-white p-6"><PriceSummary q={toQuote(o)} fulfilment={o.fulfilment_type} /></div>
           <div className="space-y-2 rounded-3xl border border-border bg-white p-6 text-sm">

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Mail, MapPin, Phone } from "lucide-react";
+import { Bike, Mail, MapPin, Phone } from "lucide-react";
 import { Logo } from "@/components/site/Logo";
 import { useStore } from "@/context/StoreContext";
 
@@ -18,9 +18,24 @@ export const Footer = () => {
           <Logo light />
           <p className="max-w-sm text-sm text-cream/70">{s?.tagline}</p>
           <div className="space-y-2 text-sm text-cream/80">
-            <p className="flex gap-2"><MapPin className="h-4 w-4 shrink-0 text-pink" />{s ? `${s.address_line}, ${s.city}, ${s.state} ${s.pincode}` : "…"}</p>
-            <p className="flex gap-2"><Phone className="h-4 w-4 text-pink" />{s?.phone}</p>
-            <p className="flex gap-2"><Mail className="h-4 w-4 text-pink" />{s?.email}</p>
+            {(s?.address_line || s?.city) && (
+              <p className="flex items-start gap-2">
+                <MapPin className="h-4 w-4 shrink-0 text-pink mt-0.5" />
+                <span>{[s.address_line, s.city, s.state, s.pincode].filter(Boolean).join(", ")}</span>
+              </p>
+            )}
+            {s?.phone && (
+              <p className="flex items-center gap-2">
+                <Phone className="h-4 w-4 text-pink" />
+                <a href={`tel:${s.phone}`} className="hover:text-pink transition-colors">{s.phone}</a>
+              </p>
+            )}
+            {s?.email && (
+              <p className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-pink" />
+                <a href={`mailto:${s.email}`} className="hover:text-pink transition-colors">{s.email}</a>
+              </p>
+            )}
           </div>
         </div>
         <div>

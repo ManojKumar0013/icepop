@@ -9,7 +9,7 @@ import { LangProvider } from "@/context/LangContext";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
 import { WhatsAppFab } from "@/components/site/WhatsApp";
-import { RequireAdmin, RequireAuth } from "@/components/site/Guards";
+import { RequireAdmin, RequireAuth, RequireRider } from "@/components/site/Guards";
 import Home from "@/pages/Home";
 import Menu from "@/pages/Menu";
 import ProductDetail from "@/pages/ProductDetail";
@@ -24,8 +24,6 @@ import Signup from "@/pages/Signup";
 import { ForgotPassword, ResetPassword } from "@/pages/PasswordPages";
 import AuthCallback from "@/pages/AuthCallback";
 import Policy from "@/pages/Policy";
-import Catering from "@/pages/Catering";
-import Subscriptions from "@/pages/Subscriptions";
 import GiftCards from "@/pages/GiftCards";
 import RiderPortal from "@/pages/RiderPortal";
 import AdminLayout from "@/pages/admin/AdminLayout";
@@ -39,7 +37,6 @@ import AdminCoupons from "@/pages/admin/AdminCoupons";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminPOS from "@/pages/admin/AdminPOS";
 import AdminKDS from "@/pages/admin/AdminKDS";
-import AdminCatering from "@/pages/admin/AdminCatering";
 
 const SiteLayout = () => (
   <div className="flex min-h-screen flex-col">
@@ -70,10 +67,8 @@ function AppRouter() {
         <Route path="/" element={<Home />} />
         <Route path="/menu" element={<Menu />} />
         <Route path="/menu/:slug" element={<ProductDetail />} />
-        <Route path="/catering" element={<Catering />} />
-        <Route path="/subscriptions" element={<Subscriptions />} />
         <Route path="/giftcards" element={<GiftCards />} />
-        <Route path="/rider" element={<RiderPortal />} />
+        <Route path="/rider" element={<RequireRider><RiderPortal /></RequireRider>} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={authed(<Checkout />)} />
         <Route path="/orders" element={authed(<Orders />)} />
@@ -92,7 +87,6 @@ function AppRouter() {
         <Route path="pos" element={<AdminPOS />} />
         <Route path="kds" element={<AdminKDS />} />
         <Route path="orders" element={<AdminOrders />} />
-        <Route path="catering" element={<AdminCatering />} />
         <Route path="products" element={<AdminProducts />} />
         <Route path="coupons" element={<AdminCoupons />} />
         <Route path="promotions" element={<AdminPromotions />} />

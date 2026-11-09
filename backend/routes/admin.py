@@ -14,7 +14,7 @@ from core.config import IST
 from core.db import get_db
 from core.models import (
     AuditLog, Inventory, LoyaltyStamp, NotificationOutbox, Order, OrderItem,
-    OrderStatusHistory, Payment, Product, ProductVariant, Promotion, User,
+    OrderStatusHistory, Payment, Product, ProductVariant, Promotion, Role, User, UserRole,
 )
 from core.loyalty import loyalty_promo, loyalty_text
 from core.notify import STATUS_LABELS, deliver_external, notify_order_event, user_lang
@@ -317,3 +317,117 @@ async def audit_logs(admin: User = Depends(require_admin), db: AsyncSession = De
                              .order_by(AuditLog.created_at.desc()).limit(200))).all()
     return [{"id": a.id, "actor": email, "action": a.action, "entity": a.entity, "entity_id": a.entity_id,
              "details": a.details, "created_at": a.created_at.isoformat()} for a, email in rows]
+
+
+class RiderEmailIn(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+@router.get("/riders")
+async def list_riders(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """List all authorized delivery partner users."""
+    role = (await db.execute(select(Role).where(Role.name == "rider"))).scalar_one_or_none()
+    if not role:
+        return {"riders": []}
+    stmt = (
+        select(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .where(UserRole.role_id == role.id)
+        .order_by(User.name)
+    )
+    riders = (await db.execute(stmt)).scalars().all()
+    return {
+        "riders": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "phone": u.phone,
+                "created_at": u.created_at.isoformat(),
+            }
+            for u in riders
+        ]
+    }
+
+
+@router.post("/riders/grant")
+async def grant_rider_role(
+    body: RiderEmailIn,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Grant delivery partner access to a user account by email."""
+    email = body.email.strip().lower()
+    target_user = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with email '{email}' was not found. Please ask the delivery partner to create an account first.",
+        )
+    role = (await db.execute(select(Role).where(Role.name == "rider"))).scalar_one_or_none()
+    if not role:
+        role = Role(name="rider")
+        db.add(role)
+        await db.flush()
+
+    existing = (
+        await db.execute(
+            select(UserRole).where(UserRole.user_id == target_user.id, UserRole.role_id == role.id)
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        db.add(UserRole(user_id=target_user.id, role_id=role.id))
+        audit(
+            db,
+            admin,
+            "role_granted",
+            "user",
+            target_user.id,
+            {"role": "rider", "email": target_user.email},
+            client_ip(request),
+        )
+        await db.commit()
+
+    return {
+        "ok": True,
+        "message": f"Successfully granted delivery partner role to {target_user.name} ({target_user.email}).",
+    }
+
+
+@router.post("/riders/revoke")
+async def revoke_rider_role(
+    body: RiderEmailIn,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke delivery partner access from a user account by email."""
+    email = body.email.strip().lower()
+    target_user = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    role = (await db.execute(select(Role).where(Role.name == "rider"))).scalar_one_or_none()
+    if role:
+        existing = (
+            await db.execute(
+                select(UserRole).where(UserRole.user_id == target_user.id, UserRole.role_id == role.id)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            await db.delete(existing)
+            audit(
+                db,
+                admin,
+                "role_revoked",
+                "user",
+                target_user.id,
+                {"role": "rider", "email": target_user.email},
+                client_ip(request),
+            )
+            await db.commit()
+
+    return {
+        "ok": True,
+        "message": f"Revoked delivery partner role from {target_user.email}.",
+    }

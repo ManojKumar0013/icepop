@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import Field, field_validator, model_validator
 from sqlalchemy import delete, select
@@ -16,12 +16,14 @@ from core.config import IST
 from core.db import get_db
 from core.models import (
     Address, Cart, CartItem, CouponRedemption, Inventory, InventoryMovement, Order, OrderItem,
-    OrderStatusHistory, Payment, PromotionRedemption, Review, User,
+    OrderStatusHistory, Payment, PromotionRedemption, Review, Role, User,
 )
 from core.notify import STATUS_LABELS, broadcaster, deliver_external, notify_order_event
 from core.payments import PaymentService
 from core.pricing import build_quote, first_order_key, public_quote
-from core.security import normalize_phone, rate_limit, require_user, validate_pincode
+from core.security import (
+    create_session, get_optional_user, normalize_phone, rate_limit, require_user, user_out, validate_pincode,
+)
 from core.store import get_settings, validate_order_time
 from routes.cart import QuoteIn
 
@@ -33,6 +35,7 @@ class OrderIn(QuoteIn):
     idempotency_key: str
     customer_name: str = Field(min_length=2, max_length=80)
     customer_phone: str
+    customer_email: Optional[str] = Field(None, max_length=255)
     address_line1: Optional[str] = Field(None, max_length=200)
     address_line2: Optional[str] = Field(None, max_length=200)
     area: Optional[str] = Field(None, max_length=100)
@@ -42,6 +45,7 @@ class OrderIn(QuoteIn):
     payment_method: str = Field(max_length=30)
     save_address: bool = False
     expected_total_paise: Optional[int] = Field(None, ge=0)
+    use_wallet: bool = False
 
     @field_validator("customer_phone")
     @classmethod
@@ -64,6 +68,18 @@ class OrderIn(QuoteIn):
         return self
 
 
+def should_reveal_otp(o: Order, admin: bool) -> bool:
+    if admin:
+        return True
+    if o.fulfilment_type != "delivery":
+        return False
+    if o.payment_method == "online" and o.payment_status != "paid":
+        return False
+    if o.status in ("pending_confirmation", "cancelled", "refund_pending", "refunded"):
+        return False
+    return True
+
+
 def order_out(o: Order, history=None, payment: Payment = None, admin=False) -> dict:
     out = {
         "order_number": o.order_number, "status": o.status, "status_label": STATUS_LABELS.get(o.status, o.status),
@@ -75,9 +91,12 @@ def order_out(o: Order, history=None, payment: Payment = None, admin=False) -> d
         "delivery_fee_paise": o.delivery_fee_paise, "total_paise": o.total_paise,
         "discounts": (o.pricing_breakdown or {}).get("discounts", []),
         "delivery_savings_paise": (o.pricing_breakdown or {}).get("delivery_savings_paise", 0),
+        "wallet_deducted_paise": (o.pricing_breakdown or {}).get("wallet_deducted_paise", 0),
+        "original_total_paise": (o.pricing_breakdown or {}).get("original_total_paise", o.total_paise),
         "coupon_code": o.coupon_code, "payment_method": o.payment_method, "payment_status": o.payment_status,
         "cancel_reason": o.cancel_reason, "created_at": o.created_at.isoformat(), "updated_at": o.updated_at.isoformat(),
-        "delivery_otp": o.delivery_otp, "rider_name": o.rider_name, "rider_phone": o.rider_phone, "is_pos": o.is_pos,
+        "delivery_otp": o.delivery_otp if should_reveal_otp(o, admin) else None,
+        "rider_name": o.rider_name, "rider_phone": o.rider_phone, "is_pos": o.is_pos,
         "items": [{"variant_id": i.variant_id, "product_name": i.product_name, "variant_name": i.variant_name, "image_url": i.image_url,
                    "unit_price_paise": i.unit_price_paise, "quantity": i.quantity, "free_quantity": i.free_quantity,
                    "discount_paise": i.discount_paise, "line_total_paise": i.line_total_paise} for i in o.items],
@@ -110,23 +129,59 @@ def _order_number() -> str:
 
 
 @router.post("")
-async def place_order(body: OrderIn, background: BackgroundTasks, user: User = Depends(require_user),
+async def place_order(body: OrderIn, background: BackgroundTasks, response: Response,
+                      user: Optional[User] = Depends(get_optional_user),
                       db: AsyncSession = Depends(get_db)):
+    auth_token = None
+    if not user:
+        clean_phone = body.customer_phone.replace("+", "").replace("-", "").replace(" ", "")
+        user = None
+        if body.customer_email and body.customer_email.strip():
+            user = (await db.execute(select(User).where(User.email == body.customer_email.strip().lower()))).scalar_one_or_none()
+        if not user:
+            user = (await db.execute(select(User).where(User.phone == body.customer_phone))).scalar_one_or_none()
+        if not user and clean_phone != body.customer_phone:
+            user = (await db.execute(select(User).where(User.phone == clean_phone))).scalar_one_or_none()
+        target_email = body.customer_email.strip().lower() if body.customer_email and body.customer_email.strip() else f"{clean_phone}@customer.icepops.in"
+        if not user:
+            customer_role = (await db.execute(select(Role).where(Role.name == "customer"))).scalar_one_or_none()
+            user = User(
+                name=body.customer_name.strip(),
+                email=target_email,
+                phone=body.customer_phone,
+                roles=[customer_role] if customer_role else [],
+                is_active=True,
+            )
+            db.add(user)
+            await db.flush()
+        elif body.customer_email and body.customer_email.strip() and user.email != body.customer_email.strip().lower():
+            email_taken = (await db.execute(select(User.id).where(User.email == body.customer_email.strip().lower()))).first()
+            if not email_taken and user.email.endswith("@customer.icepops.in"):
+                user.email = body.customer_email.strip().lower()
+        auth_token = await create_session(db, user, response)
+
     existing = (await db.execute(select(Order).where(Order.idempotency_key == body.idempotency_key))).scalar_one_or_none()
     if existing:
         if existing.user_id != user.id:
             raise HTTPException(status_code=409, detail="Duplicate request")
-        return order_out(existing, await load_history(db, existing.id))
-    rate_limit(f"order:{user.id}", 10, 600)
-
+        res = order_out(existing, await load_history(db, existing.id))
+        if auth_token:
+            res["token"] = auth_token
+            res["user"] = user_out(user, token=auth_token)
+        return res
     time_error = await validate_order_time(db, body.preferred_time)
     if time_error:
         raise HTTPException(status_code=400, detail=time_error)
+    rate_limit(f"order:{user.id}", 30, 600)
     settings = await get_settings(db)
     PaymentService.validate_method(settings.payment_methods or [], body.payment_method, body.fulfilment_type)
 
     # Serialise this customer's checkouts so one-time offers can't be redeemed twice in parallel.
-    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    user_record = (await db.execute(select(User).where(User.id == user.id).with_for_update())).scalar_one()
+    current_wallet = user_record.wallet_balance_paise or 0
+    is_direct_wallet = (body.payment_method == "wallet")
+    use_wallet = body.use_wallet or is_direct_wallet
+
     q = await build_quote(db, user, body.items, body.coupon_code, body.fulfilment_type, body.pincode, lock=True,
                           use_reward=body.use_loyalty_reward)
     if q["errors"]:
@@ -135,24 +190,54 @@ async def place_order(body: OrderIn, background: BackgroundTasks, user: User = D
     if body.coupon_code and body.coupon_code.strip() and q["coupon_error"]:
         await db.rollback()
         raise HTTPException(status_code=400, detail=q["coupon_error"])
-    if body.expected_total_paise is not None and body.expected_total_paise != q["total_paise"]:
+
+    order_base_total = q["total_paise"]
+
+    wallet_deduction = 0
+    if use_wallet and current_wallet > 0:
+        wallet_deduction = min(current_wallet, order_base_total)
+
+    if is_direct_wallet and wallet_deduction < order_base_total:
+        shortage = order_base_total - current_wallet
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Your order total has changed (an offer or price was updated). Please review the new total and place the order again.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient wallet balance. You have ₹{current_wallet // 100}, but order total is ₹{order_base_total // 100} (short by ₹{shortage // 100}).",
+        )
+
+    payable_total = order_base_total - wallet_deduction
+    effective_method = "wallet" if payable_total == 0 else body.payment_method
+    effective_payment_status = "paid" if payable_total == 0 else "pending"
+
+    if body.expected_total_paise is not None:
+        if body.expected_total_paise not in (payable_total, order_base_total):
+            await db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Your order total has changed. Please review the new total and place the order again."
+            )
+
+    if wallet_deduction > 0:
+        user_record.wallet_balance_paise = current_wallet - wallet_deduction
+        user.wallet_balance_paise = user_record.wallet_balance_paise
 
     delivery = body.fulfilment_type == "delivery"
     delivery_otp = f"{secrets.randbelow(9000) + 1000}" if delivery else None
+    cust_email = (body.customer_email.strip().lower() if body.customer_email and body.customer_email.strip() else None) or user.email
     order = Order(
         order_number=_order_number(), user_id=user.id, idempotency_key=body.idempotency_key,
         status="pending_confirmation", fulfilment_type=body.fulfilment_type,
-        customer_name=body.customer_name.strip(), customer_phone=body.customer_phone, customer_email=user.email,
+        customer_name=body.customer_name.strip(), customer_phone=body.customer_phone, customer_email=cust_email,
         address_line1=body.address_line1 if delivery else None, address_line2=body.address_line2 if delivery else None,
         area=body.area if delivery else None, city=body.city if delivery else None,
         pincode=body.pincode if delivery else None, delivery_instructions=body.delivery_instructions,
         preferred_time=body.preferred_time, subtotal_paise=q["subtotal_paise"], discount_paise=q["discount_paise"],
-        delivery_fee_paise=q["delivery_fee_paise"], total_paise=q["total_paise"],
+        delivery_fee_paise=q["delivery_fee_paise"],
+        total_paise=payable_total if payable_total > 0 else order_base_total,
         pricing_breakdown={"discounts": q["discounts"], "delivery_savings_paise": q["delivery_savings_paise"],
-                           "notes": q["notes"]},
-        coupon_code=q["coupon_code"], payment_method=body.payment_method, payment_status="pending",
+                           "notes": q["notes"], "wallet_deducted_paise": wallet_deduction, "original_total_paise": order_base_total},
+        coupon_code=q["coupon_code"], payment_method=effective_method,
+        payment_status=effective_payment_status,
         delivery_otp=delivery_otp,
     )
     db.add(order)
@@ -185,9 +270,32 @@ async def place_order(body: OrderIn, background: BackgroundTasks, user: User = D
                                        discount_paise=cand["amount"],
                                        once_key=first_order_key(user.id) if cand["code"] == "first_order" else None))
 
-    db.add(PaymentService.create_pending(order))
-    db.add(OrderStatusHistory(order_id=order.id, from_status=None, to_status="pending_confirmation",
-                              note="Order placed", actor_user_id=user.id))
+    if wallet_deduction > 0:
+        db.add(Payment(
+            order_id=order.id,
+            provider="wallet",
+            method="wallet",
+            amount_paise=wallet_deduction,
+            status="paid",
+            details={"paid_from_wallet": True, "remaining_wallet_paise": user.wallet_balance_paise},
+        ))
+    if payable_total > 0:
+        db.add(PaymentService.create_pending(order))
+        db.add(OrderStatusHistory(
+            order_id=order.id,
+            from_status=None,
+            to_status="pending_confirmation",
+            note=f"Order placed" + (f" (₹{wallet_deduction // 100} paid from wallet, ₹{payable_total // 100} via {effective_method})" if wallet_deduction > 0 else ""),
+            actor_user_id=user.id,
+        ))
+    else:
+        db.add(OrderStatusHistory(
+            order_id=order.id,
+            from_status=None,
+            to_status="pending_confirmation",
+            note=f"Paid ₹{wallet_deduction // 100} in full using ICEPOPS Wallet",
+            actor_user_id=user.id,
+        ))
     if body.save_address and delivery:
         has = (await db.execute(select(Address.id).where(Address.user_id == user.id, Address.pincode == body.pincode,
                                                          Address.line1 == body.address_line1))).first()
@@ -207,7 +315,11 @@ async def place_order(body: OrderIn, background: BackgroundTasks, user: User = D
     background.add_task(deliver_external, order.id, "placed")
     order = (await db.execute(select(Order).where(Order.id == order.id)
                               .execution_options(populate_existing=True))).scalar_one()
-    return order_out(order, await load_history(db, order.id))
+    res = order_out(order, await load_history(db, order.id))
+    if auth_token:
+        res["token"] = auth_token
+        res["user"] = user_out(user, token=auth_token)
+    return res
 
 
 @router.get("")

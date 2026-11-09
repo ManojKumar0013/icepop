@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import SESSION_COOKIE
+from core.config import COOKIE_SECURE, SESSION_COOKIE
 from core.db import get_db
 from core.models import PasswordResetToken, Role, Session, User
 from core.notify import send_password_reset
@@ -87,9 +87,9 @@ async def register(body: RegisterIn, request: Request, response: Response, db: A
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="An account with these details already exists.")
-    await create_session(db, user, response)
+    token = await create_session(db, user, response)
     await db.commit()
-    return user_out(user)
+    return user_out(user, token=token)
 
 
 @router.post("/login")
@@ -103,9 +103,9 @@ async def login(body: LoginIn, request: Request, response: Response, db: AsyncSe
         record_hit(ip_key)
         record_hit(email_key)
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
-    await create_session(db, user, response)
+    token = await create_session(db, user, response)
     await db.commit()
-    return user_out(user)
+    return user_out(user, token=token)
 
 
 @router.post("/google/session")
@@ -129,9 +129,9 @@ async def google_session(body: GoogleIn, request: Request, response: Response, d
         raise HTTPException(status_code=403, detail="This account is disabled.")
     else:
         user.picture = data.get("picture") or user.picture
-    await create_session(db, user, response)
+    token = await create_session(db, user, response)
     await db.commit()
-    return user_out(user)
+    return user_out(user, token=token)
 
 
 @router.get("/me")
@@ -154,11 +154,11 @@ async def update_me(body: ProfileIn, user: User = Depends(require_user), db: Asy
 
 @router.post("/logout")
 async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
-    token = request.cookies.get(SESSION_COOKIE)
+    token = _token_from(request)
     if token:
         await db.execute(delete(Session).where(Session.token_hash == sha256(token)))
         await db.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.delete_cookie(SESSION_COOKIE, path="/", secure=COOKIE_SECURE, httponly=True, samesite="lax")
     return {"ok": True}
 
 

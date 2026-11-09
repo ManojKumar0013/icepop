@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useCart } from "@/context/CartContext";
 import { inr } from "@/lib/format";
 import { useLang } from "@/context/LangContext";
 
 export const ProductCard = ({ product, index = 0 }) => {
-  const { add } = useCart();
+  const { add, items, setQty } = useCart();
   const firstInStock = product.variants.find((v) => v.in_stock) || product.variants[0];
   const [variantId, setVariantId] = useState(firstInStock?.id);
   const variant = product.variants.find((v) => v.id === variantId);
   const canAdd = variant?.in_stock;
   const { t, pn, pd } = useLang();
+
+  const cartItem = items.find((i) => i.variant_id === variant?.id);
+  const currentQty = cartItem?.quantity || 0;
 
   const onAdd = () => {
     add(variant.id);
@@ -49,10 +52,48 @@ export const ProductCard = ({ product, index = 0 }) => {
         )}
         <div className="mt-auto flex items-center justify-between pt-1">
           <span data-testid={`product-price-${product.slug}`} className="font-display text-xl font-extrabold">{variant ? inr(variant.price_paise) : "—"}</span>
-          <button type="button" onClick={onAdd} disabled={!canAdd} data-testid={`add-to-cart-${product.slug}`}
-            className="flex items-center gap-1.5 rounded-full bg-choco px-4 py-2 text-sm font-bold text-cream transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-strawberry active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground">
-            <Plus className="h-4 w-4" />{canAdd ? t("Add") : t("Out of stock")}
-          </button>
+          {currentQty > 0 ? (
+            <div data-testid={`product-stepper-${product.slug}`} className="flex items-center rounded-full bg-strawberry text-white shadow-sm h-9 px-1 transition-all">
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                data-testid={`product-decrease-${product.slug}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQty(variant.id, currentQty - 1);
+                  if (currentQty === 1) {
+                    toast.info(`${pn(product)} removed`);
+                  }
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90"
+              >
+                <Minus className="h-4 w-4 stroke-[3]" />
+              </button>
+              <span data-testid={`product-qty-${product.slug}`} className="min-w-7 px-1 text-center font-display text-sm font-black text-white select-none">
+                {currentQty}
+              </span>
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                data-testid={`product-increase-${product.slug}`}
+                disabled={!canAdd || currentQty >= 50}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQty(variant.id, currentQty + 1);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-all hover:bg-black/20 active:scale-90 disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4 stroke-[3]" />
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={onAdd} disabled={!canAdd} data-testid={`add-to-cart-${product.slug}`}
+              className="flex items-center gap-1.5 rounded-full bg-choco px-4 py-2 text-sm font-bold text-cream transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-strawberry active:scale-95 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground">
+              <Plus className="h-4 w-4" />{canAdd ? t("Add") : t("Out of stock")}
+            </button>
+          )}
         </div>
       </div>
     </article>

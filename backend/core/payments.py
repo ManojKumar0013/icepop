@@ -120,6 +120,8 @@ class PaymentService:
 
     @staticmethod
     def validate_method(methods: list, code: str, fulfilment_type: str) -> None:
+        if code == "wallet":
+            return
         m = next((x for x in methods if x.get("code") == code), None)
         if not m or not m.get("enabled"):
             raise HTTPException(status_code=400, detail="This payment method is not available.")
@@ -130,6 +132,9 @@ class PaymentService:
 
     @staticmethod
     def create_pending(order: Order) -> Payment:
+        if order.payment_method == "wallet":
+            return Payment(order_id=order.id, provider="wallet", method="wallet",
+                           amount_paise=order.total_paise, status="paid", details={"paid_from_wallet": True})
         provider = "razorpay" if order.payment_method == "online" else "offline"
         return Payment(order_id=order.id, provider=provider, method=order.payment_method,
                        amount_paise=order.total_paise, status="pending", details={})

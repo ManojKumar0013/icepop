@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ArrowRight, Clock, IceCreamCone, MapPin, Phone, Sparkles, Truck, Gift, Users } from "lucide-react";
+import { ArrowRight, Clock, IceCreamCone, MapPin, Phone, Sparkles, Truck, Gift, Users, CheckCircle2, Star } from "lucide-react";
 import { api } from "@/lib/api";
 import { useStore } from "@/context/StoreContext";
 import { ProductCard } from "@/components/site/ProductCard";
@@ -47,7 +47,7 @@ const Hero = ({ store }) => {
       <div className="relative md:col-span-6">
         <div className="absolute -right-10 -top-10 h-72 w-72 rounded-full bg-pink/40 blur-3xl" />
         <div className="relative aspect-[4/5] overflow-hidden rounded-[2.5rem] shadow-2xl sm:aspect-[5/5] md:ml-8">
-          <img src="/images/hero.jpg" alt="Ice cream sundae with scoops and toppings" className="h-full w-full object-cover" fetchpriority="high" />
+          <img src="/images/hero.jpg" alt="Ice cream sundae with scoops and toppings" className="h-full w-full object-cover" fetchPriority="high" />
         </div>
         <div className="animate-floaty absolute -left-2 bottom-10 rounded-2xl bg-white/90 px-4 py-3 shadow-xl backdrop-blur-md sm:left-0">
           <p className="text-xs font-semibold text-muted-foreground">{t("Free delivery")}</p>
@@ -120,10 +120,26 @@ const Categories = ({ cats }) => (
 );
 
 const Testimonials = ({ items }) => (
-  <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8" data-testid="testimonials-section">
-    <H2>What our customers say</H2>
+  <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8" data-testid="testimonials-section">
+    <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
+      <div>
+        <div className="inline-flex items-center gap-2 rounded-full bg-pink-light px-3.5 py-1 text-xs font-bold text-strawberry mb-2">
+          <Sparkles className="h-3.5 w-3.5" /> 4.9 ★ Real Customer Reviews
+        </div>
+        <H2>What our customers say</H2>
+        <p className="text-xs sm:text-sm text-choco/70 -mt-6 max-w-xl">
+          Real stories, honest feedback, and sweet smiles from verified customers who enjoyed our handcrafted popsicles.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 text-xs font-bold text-choco/70">
+        <span className="flex items-center gap-1.5 bg-white border border-border px-3.5 py-1.5 rounded-full shadow-sm">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" /> 100% Verified Doorstep Orders
+        </span>
+      </div>
+    </div>
+
     {items.length ? (
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((r) => <ReviewCard key={r.id} r={r} />)}
       </div>
     ) : (
@@ -165,26 +181,26 @@ const Visit = ({ s }) => (
 const FeatureShowcase = () => (
   <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <Link to="/catering" className="group rounded-3xl bg-gradient-to-br from-pink-light via-pink/40 to-white p-7 border border-pink/30 shadow-sm hover:shadow-md transition-all">
-        <span className="text-3xl mb-3 block">🎉</span>
-        <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-strawberry bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Events & Celebrations</span>
-        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Party Assortment Boxes</h3>
-        <p className="mt-2 text-xs text-choco/70 leading-relaxed">25, 50 & 100 stick thermal chiller boxes with custom flavour mix sliders. Stays frozen 4+ hours.</p>
-        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-strawberry">Explore Party Packs →</span>
+      <Link to="/menu" className="group rounded-3xl bg-gradient-to-br from-pink-light via-pink/40 to-white p-7 border border-pink/30 shadow-sm hover:shadow-md transition-all">
+        <span className="text-3xl mb-3 block">🍧</span>
+        <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-strawberry bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Handcrafted Daily</span>
+        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Real-Fruit Popsicles</h3>
+        <p className="mt-2 text-xs text-choco/70 leading-relaxed">100% natural fruit pulps, pure milk, and zero artificial preservatives frozen fresh in small batches.</p>
+        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-strawberry">Explore Menu →</span>
       </Link>
-      <Link to="/subscriptions" className="group rounded-3xl bg-gradient-to-br from-sky-50 via-sky-100/50 to-white p-7 border border-sky-200/50 shadow-sm hover:shadow-md transition-all">
-        <span className="text-3xl mb-3 block">📦</span>
-        <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-sky-700 bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Doorstep Club</span>
-        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Weekly Popsicle Club</h3>
-        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Curated boxes of fresh artisanal popsicles delivered every weekend. Pause or cancel anytime.</p>
-        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700">Join the Club →</span>
+      <Link to="/menu" className="group rounded-3xl bg-gradient-to-br from-sky-50 via-sky-100/50 to-white p-7 border border-sky-200/50 shadow-sm hover:shadow-md transition-all">
+        <span className="text-3xl mb-3 block">❄️</span>
+        <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-sky-700 bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Sub-Zero Chiller Box</span>
+        <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Superfast Doorstep Delivery</h3>
+        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Delivered in high-performance insulated cooler bags so your ice pops arrive rock-solid and icy cold.</p>
+        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700">Order Online →</span>
       </Link>
       <Link to="/giftcards" className="group rounded-3xl bg-gradient-to-br from-amber-50 via-orange-100/40 to-white p-7 border border-amber-200/50 shadow-sm hover:shadow-md transition-all">
         <span className="text-3xl mb-3 block">🎁</span>
         <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-amber-800 bg-white/80 px-2.5 py-0.5 rounded-full mb-2">Sweet Surprises</span>
         <h3 className="font-display text-xl font-extrabold text-choco group-hover:text-strawberry transition-colors">Digital Gift Vouchers</h3>
-        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Treat friends and loved ones to delicious real-fruit popsicles with instant WhatsApp delivery.</p>
-        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-amber-800">Send a Gift Card →</span>
+        <p className="mt-2 text-xs text-choco/70 leading-relaxed">Treat friends and loved ones to delicious real-fruit popsicles with instant digital delivery.</p>
+        <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-amber-800">Send a Gift Voucher →</span>
       </Link>
     </div>
   </section>
