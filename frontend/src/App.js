@@ -27,6 +27,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import Policy from "@/pages/Policy";
 import GiftCards from "@/pages/GiftCards";
 import BoxBuilder from "@/pages/BoxBuilder";
+import ReferralPage from "@/pages/ReferralPage";
 import RiderPortal from "@/pages/RiderPortal";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import AdminOverview from "@/pages/admin/AdminOverview";
@@ -83,6 +84,8 @@ function AppRouter() {
         <Route path="/menu/:slug" element={<ProductDetail />} />
         <Route path="/box-builder" element={<BoxBuilder />} />
         <Route path="/giftcards" element={<GiftCards />} />
+        <Route path="/refer" element={<ReferralPage />} />
+        <Route path="/referral" element={<ReferralPage />} />
         <Route path="/rider" element={<RequireRider><RiderPortal /></RequireRider>} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={authed(<Checkout />)} />

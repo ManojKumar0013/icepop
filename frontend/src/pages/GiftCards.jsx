@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import {
   Gift,
   Sparkles,
@@ -20,6 +21,7 @@ import {
   Clock,
   Smartphone,
   Info,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -401,17 +403,23 @@ export default function GiftCards() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-border p-4 shadow-sm flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <ShieldCheck className="h-5 w-5" />
+            <Link
+              to="/refer"
+              className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-300/80 p-4 shadow-sm flex items-center justify-between gap-3 hover:border-amber-400 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-amber-900 block uppercase">Refer & Earn ₹10</span>
+                  <span className="text-xs font-bold text-choco block">
+                    Invite friends, both get ₹10 wallet cash
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-[11px] font-bold text-choco/60 block uppercase">Instant 1-Click</span>
-                <span className="text-xs font-bold text-choco block">
-                  Redeem or pay via wallet at checkout
-                </span>
-              </div>
-            </div>
+              <ArrowRight className="h-4 w-4 text-choco/60 group-hover:translate-x-1 transition-transform shrink-0" />
+            </Link>
           </div>
         </div>
 

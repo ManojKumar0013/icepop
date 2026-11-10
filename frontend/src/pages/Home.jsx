@@ -207,6 +207,31 @@ const FeatureShowcase = () => (
   </section>
 );
 
+const ReferBanner = () => (
+  <section className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+    <div className="relative overflow-hidden rounded-3xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-pink-light/40 p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="space-y-1.5 text-center md:text-left">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 border border-amber-300/80">
+          🎁 Give ₹10, Get ₹10 Program
+        </span>
+        <h3 className="font-display text-xl sm:text-2xl font-black text-choco">
+          Invite Friends to ICEPOPS & Both Earn ₹10! 🍧
+        </h3>
+        <p className="text-xs sm:text-sm text-choco/80 max-w-xl">
+          Share your invite code with friends. When they place their first order, both of you get ₹10 credited directly to your digital wallet!
+        </p>
+      </div>
+      <Link
+        to="/refer"
+        className="shrink-0 inline-flex items-center gap-2 rounded-2xl bg-choco px-6 py-3.5 text-sm font-bold text-cream shadow hover:bg-choco/90 active:scale-95 transition-all"
+      >
+        <span>Get Your Invite Code</span>
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  </section>
+);
+
 const BoxBuilderBanner = () => (
   <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-choco via-choco/95 to-strawberry/90 p-8 sm:p-10 text-cream shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
@@ -258,6 +283,7 @@ export default function Home() {
       <Hero store={store} />
       <AutoIceCreamSlider products={allProducts} />
       <FeatureShowcase />
+      <ReferBanner />
       <BoxBuilderBanner />
       {store && <Offers promotions={store.promotions} />}
       <Categories cats={cats} />

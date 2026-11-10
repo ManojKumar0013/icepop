@@ -13,6 +13,7 @@ const LINKS = [
   { to: "/menu", label: "Menu", id: "menu" },
   { to: "/box-builder", label: "Build a Box 🎁", id: "box-builder" },
   { to: "/giftcards", label: "Gift Cards", id: "giftcards" },
+  { to: "/refer", label: "Refer & Earn 🍧", id: "refer" },
   { to: "/orders", label: "Track order", id: "track" },
 ];
 
@@ -48,7 +49,7 @@ const UserMenu = ({ user, isAdmin, isRider, logout }) => {
         <DropdownMenuSeparator />
         <DropdownMenuItem data-testid="nav-account-link" onClick={() => navigate("/account")}><User className="mr-2 h-4 w-4" />{t("My account")}</DropdownMenuItem>
         <DropdownMenuItem data-testid="nav-orders-link" onClick={() => navigate("/orders")}><Package className="mr-2 h-4 w-4" />{t("My orders")}</DropdownMenuItem>
-        <DropdownMenuItem data-testid="nav-referral-link" onClick={() => navigate("/account#referral")}><Users className="mr-2 h-4 w-4 text-amber-600" />{t("Refer & earn")}</DropdownMenuItem>
+        <DropdownMenuItem data-testid="nav-referral-link" onClick={() => navigate("/refer")}><Users className="mr-2 h-4 w-4 text-amber-600" />{t("Refer & earn")}</DropdownMenuItem>
         <DropdownMenuItem data-testid="nav-giftcards-link" onClick={() => navigate("/giftcards")}><Gift className="mr-2 h-4 w-4" />{t("Gift vouchers & wallet")}</DropdownMenuItem>
         {isRider && <DropdownMenuItem data-testid="nav-rider-link" onClick={() => navigate("/rider")}><Bike className="mr-2 h-4 w-4" />Delivery partner</DropdownMenuItem>}
         {isAdmin && <DropdownMenuItem data-testid="nav-admin-link" onClick={() => navigate("/admin")}><LayoutDashboard className="mr-2 h-4 w-4" />Seller dashboard</DropdownMenuItem>}

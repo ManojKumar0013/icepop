@@ -42,7 +42,9 @@ export const Footer = () => {
           <h4 className="mb-4 font-display text-sm font-bold uppercase tracking-widest text-pink">Shop</h4>
           <ul className="space-y-2 text-sm text-cream/80">
             <li><Link to="/menu" className="hover:text-pink">Full menu</Link></li>
-            <li><Link to="/#offers" className="hover:text-pink">Offers</Link></li>
+            <li><Link to="/box-builder" className="hover:text-pink">Build a box 🎁</Link></li>
+            <li><Link to="/refer" className="hover:text-pink">Refer & earn (₹10) 🍧</Link></li>
+            <li><Link to="/giftcards" className="hover:text-pink">Gift cards & wallet</Link></li>
             <li><Link to="/orders" className="hover:text-pink">Track an order</Link></li>
             <li><Link to="/account" className="hover:text-pink">My account</Link></li>
           </ul>
