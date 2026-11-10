@@ -15,9 +15,9 @@ export function ScratchCard({ orderNumber, onClaimed }) {
   const [loading, setLoading] = useState(true);
   const [eligible, setEligible] = useState(false);
   const [claimed, setClaimed] = useState(false);
-  const [rewardType, setRewardType] = useState("cashback");
-  const [rewardTitle, setRewardTitle] = useState("₹5 Cashback");
-  const [amountPaise, setAmountPaise] = useState(500);
+  const [rewardType, setRewardType] = useState(null);
+  const [rewardTitle, setRewardTitle] = useState("");
+  const [amountPaise, setAmountPaise] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [stamps, setStamps] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -216,8 +216,7 @@ export function ScratchCard({ orderNumber, onClaimed }) {
     setTimeout(() => setCopiedCoupon(false), 2000);
   };
 
-  if (loading) return null;
-  if (!eligible) return null;
+  if (loading || !eligible || !rewardType) return null;
 
   return (
     <div

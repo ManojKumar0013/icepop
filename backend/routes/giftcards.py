@@ -515,11 +515,11 @@ async def list_my_vouchers(
     if not user:
         return []
 
-    # 1. Gift card codes explicitly purchased or redeemed by this user account
+    # 1. Gift card codes explicitly purchased by this user account
     user_codes = (await db.execute(
         select(AuditLog.entity_id).where(
             AuditLog.actor_user_id == user.id,
-            AuditLog.action.in_(["giftcard_purchased", "giftcard_redeemed"]),
+            AuditLog.action == "giftcard_purchased",
         )
     )).scalars().all()
 
@@ -585,10 +585,7 @@ async def wallet_history(
                 # Friend referral bonus where this user is the referrer
                 and_(
                     AuditLog.action == "referral_bonus",
-                    or_(
-                        AuditLog.entity_id == str(user.id),
-                        AuditLog.actor_user_id == user.id,
-                    ),
+                    AuditLog.entity_id == str(user.id),
                 ),
             ),
         ).order_by(AuditLog.created_at.desc())
@@ -596,7 +593,7 @@ async def wallet_history(
 
     for r in credits:
         amount = (r.details or {}).get("amount_paise", 0)
-        # Skip ?0 non-cash perks (like loyalty stamps) from cash wallet passbook
+        # Skip ₹0 non-cash perks (like loyalty stamps) from cash wallet passbook
         if amount <= 0:
             continue
 
@@ -605,9 +602,11 @@ async def wallet_history(
             title = reward_title
             desc = "Won from post-payment scratch card"
         elif r.action == "referral_bonus":
-            # Strict isolation: Only show to the referrer who received the ?10
+            # Strict isolation: Only show to the referrer who received the ₹10
+            if r.entity_id != str(user.id):
+                continue
             referred_user_id = (r.details or {}).get("referred_user_id")
-            if referred_user_id == user.id:
+            if referred_user_id and referred_user_id == user.id:
                 # This was the customer who made the purchase, not the referrer!
                 continue
             friend = (r.details or {}).get("referred_name", "Friend")
@@ -615,7 +614,7 @@ async def wallet_history(
             desc = "Credited when your friend placed an order"
         elif r.action == "referral_bonus_welcome":
             # Strict isolation: Only show to the customer who got welcomed
-            if r.actor_user_id != user.id:
+            if r.actor_user_id != user.id and r.entity_id != str(user.id):
                 continue
             referrer_name = (r.details or {}).get("referrer_name", "a friend")
             title = "Welcome Referral Bonus 🍨"

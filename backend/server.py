@@ -111,6 +111,7 @@ async def startup():
                          "ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT 'en'",
                          "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20)",
                          "ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance_paise INTEGER DEFAULT 0",
+                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_id INTEGER",
                          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_otp VARCHAR(6)",
                          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rider_name VARCHAR(80)",
                          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rider_phone VARCHAR(15)",

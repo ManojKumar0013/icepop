@@ -98,3 +98,5 @@ frontend/node_modules/.cache/default-development/7.pack
 credentials.json
 *.key
 .credentials
+*.db
+migrate_local_to_neon.py
