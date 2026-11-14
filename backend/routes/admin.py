@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import IST
 from core.db import get_db
+from core.delivery import complete_delivery, otp_state
 from core.models import (
     AuditLog, Inventory, LoyaltyStamp, NotificationOutbox, Order, OrderItem,
     OrderStatusHistory, Payment, Product, ProductVariant, Promotion, Role, User, UserRole,
@@ -168,6 +169,8 @@ async def admin_order(number: str, admin: User = Depends(require_admin), db: Asy
     if o.payment_status != "paid":
         allowed = allowed - {"refund_pending"}
     out["allowed_transitions"] = sorted(allowed)
+    out.update(otp_state(o))
+    out["otp_override_reason"] = o.otp_override_reason
     return out
 
 
@@ -223,6 +226,31 @@ async def update_status(number: str, body: StatusIn, request: Request, backgroun
     await notify_order_event(db, o, event, extra)
     await db.commit()
     background.add_task(deliver_external, o.id, event)
+    return await admin_order(number, admin, db)
+
+
+class OtpOverrideIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=300)
+
+
+@router.post("/orders/{number}/override-delivery-otp")
+async def override_delivery_otp(number: str, body: OtpOverrideIn, request: Request, background: BackgroundTasks,
+                                admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Admin marks an out-for-delivery order delivered without the customer OTP. A reason is mandatory and audited."""
+    o = await _admin_order(db, number, lock=True)
+    if o.status != "out_for_delivery":
+        raise HTTPException(status_code=400, detail="Only orders that are out for delivery can be overridden.")
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Please enter the reason for overriding the delivery OTP.")
+    o.otp_override_reason = reason
+    extra = await complete_delivery(db, o, admin, f"Delivered - delivery OTP overridden by {admin.name}. Reason: {reason}")
+    audit(db, admin, "delivery_otp_override", "order", o.order_number,
+          {"reason": reason, "rider_name": o.rider_name, "otp_attempts": o.otp_attempts, "otp_locked": o.otp_locked,
+           "otp_resends": o.otp_resends}, client_ip(request))
+    await notify_order_event(db, o, "delivered", extra)
+    await db.commit()
+    background.add_task(deliver_external, o.id, "delivered")
     return await admin_order(number, admin, db)
 
 

@@ -39,3 +39,11 @@ Shop phone, WhatsApp, address, city/state/PIN, FSSAI number, policy text, sample
 - P0 Phase 5: promotion test matrix (days, amounts, customers)
 - P1 Phase 6 Razorpay test mode (signature verification, webhooks)
 - P2 Phase 7 security hardening (DB/redis-backed rate limits, Alembic migrations); Phase 8 GitHub/deploy/domain (APP_PUBLIC_URL must be set to the live domain)
+
+## Implemented (2026-11-13, Phase 1 of the 11-prompt roadmap: Prompts 1 + 2)
+- Signup OTP hardened: DB table otp_codes (hashed sha256+OTP_PEPPER, 5 min, 5 attempts, single-use, 30 s cooldown) via core/otp.py; removed debug_otp, 000000, x-bypass-otp and httpx bypasses; ENABLE_TEST_OTP=true (ignored when APP_ENV=production) logs the OTP to the server console only
+- Alembic: backend/alembic (0001_baseline checkfirst + ADD COLUMN IF NOT EXISTS, 0002_otp_codes), run at startup by core/migrate.py; additive-only rule enforced by tests; MIGRATIONS.md has Neon branch rehearsal + production commands (stamp/upgrade). Rehearsed on local PostgreSQL 15
+- config.py: no default Razorpay keys; APP_ENV=production fails fast on missing secrets; GOOGLE_CLIENT_ID; GET /auth/config; POST /auth/google/credential (Google Identity Services) with legacy Emergent flow kept while GOOGLE_CLIENT_ID is empty (Login.jsx GoogleButton auto-switches)
+- Storage stays Emergent managed (needs EMERGENT_LLM_KEY on own hosting; local-disk fallback otherwise)
+- Tests: tests/test_otp_security.py (15); old suite register() now reads the dev OTP from the log
+- User decisions: MSG91 for SMS + WhatsApp (interface-based), Indian numbers only (+91), DLT-safe texts without links, stop after each phase for confirmation. NEXT: Prompt 3 (mobile OTP signup/login via MSG91) after user confirms.

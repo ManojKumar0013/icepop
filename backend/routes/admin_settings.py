@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.db import get_db
 from core.models import DeliveryZone, Holiday, OpeningHour, PolicyPage, User
 from core.security import audit, client_ip, require_admin, validate_pincode
+from core.messaging import channel_status
 from core.store import WEEKDAYS, get_settings, store_status
 
 router = APIRouter(prefix="/admin", tags=["admin-settings"])
 SETTINGS_FIELDS = ("business_name", "tagline", "logo_url", "phone", "whatsapp", "email", "address_line", "city", "state",
                    "pincode", "map_embed_url", "fssai_number", "gstin", "is_temporarily_closed", "closure_message",
                    "rush_mode", "rush_message",
+                   "notify_email_enabled", "notify_sms_enabled", "notify_whatsapp_enabled",
                    "pickup_enabled", "delivery_enabled", "default_delivery_fee_paise", "min_delivery_order_paise")
 
 
@@ -47,6 +49,9 @@ class SettingsIn(BaseModel):
     closure_message: Optional[str] = Field(None, max_length=300)
     rush_mode: bool = False
     rush_message: Optional[str] = Field(None, max_length=300)
+    notify_email_enabled: bool = True
+    notify_sms_enabled: bool = False
+    notify_whatsapp_enabled: bool = False
     pickup_enabled: bool = True
     delivery_enabled: bool = True
     default_delivery_fee_paise: int = Field(ge=0, le=1_000_000)
@@ -113,6 +118,7 @@ async def settings_payload(db) -> dict:
     out["policies"] = [{"slug": p.slug, "title": p.title, "content": p.content}
                        for p in (await db.execute(select(PolicyPage).order_by(PolicyPage.id))).scalars()]
     out["status"] = await store_status(db)
+    out["notification_channels"] = channel_status()
     return out
 
 

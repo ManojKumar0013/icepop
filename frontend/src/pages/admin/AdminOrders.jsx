@@ -51,6 +51,8 @@ const OrderPanel = ({ number, onChanged }) => {
   const [o, setO] = useState(null);
   const [reasonOpen, setReasonOpen] = useState(null);
   const [note, setNote] = useState("");
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const load = useCallback(() => api.get(`/admin/orders/${number}`).then(({ data }) => setO(data))
     .catch((e) => toast.error(errMsg(e, "Couldn't load this order."))), [number]);
   useEffect(() => {
@@ -79,6 +81,27 @@ const OrderPanel = ({ number, onChanged }) => {
       toast.error(errMsg(e));
     }
   };
+  const overrideOtp = async () => {
+    try {
+      const { data } = await api.post(`/admin/orders/${number}/override-delivery-otp`, { reason: overrideReason.trim() });
+      setO(data);
+      setOverrideOpen(false);
+      setOverrideReason("");
+      toast.success("Marked delivered (OTP overridden — reason recorded in the audit log)");
+      onChanged();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+  const resendOtp = async () => {
+    try {
+      const { data } = await api.post(`/rider/orders/${number}/resend-otp`);
+      toast.success(data.message || "New OTP sent");
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
   if (!o) return <p className="p-6 text-sm">Loading…</p>;
   const needsNote = (s) => ["cancelled", "refund_pending", "refunded"].includes(s);
 
@@ -100,6 +123,20 @@ const OrderPanel = ({ number, onChanged }) => {
         <button data-testid="admin-print-receipt" onClick={() => window.print()} className="flex items-center gap-1 rounded-full border border-border px-4 py-2 font-bold"><Printer className="h-4 w-4" />Print</button>
       </div>
       <WhatsAppUpdate o={o} />
+      {o.status === "out_for_delivery" && o.fulfilment_type === "delivery" && (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs" data-testid="admin-order-delivery-otp">
+          <p className="mb-1 text-sm font-bold">Delivery OTP</p>
+          <p>Code: <span className="font-mono text-base font-black tracking-widest" data-testid="admin-delivery-otp-code">{o.delivery_otp || "—"}</span>
+            {" · "}Rider: {o.rider_name || "—"}{o.rider_phone ? ` (${o.rider_phone})` : ""}</p>
+          <p className="mt-1">Wrong attempts: <b>{o.otp_attempts}</b>/5 · Resends used: <b>{o.otp_resends}</b>/3
+            {o.otp_locked && <span className="ml-2 rounded-full bg-strawberry px-2 py-0.5 font-bold text-white" data-testid="admin-otp-locked">LOCKED</span>}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button data-testid="admin-otp-resend" disabled={o.otp_resends >= 3} onClick={resendOtp} className="rounded-full border border-border bg-white px-3 py-1.5 font-bold disabled:opacity-50">Resend OTP to customer</button>
+            <button data-testid="admin-otp-override" onClick={() => setOverrideOpen(true)} className="rounded-full bg-choco px-3 py-1.5 font-bold text-cream hover:bg-strawberry">Override OTP &amp; mark delivered</button>
+          </div>
+        </section>
+      )}
+      {o.otp_override_reason && <p className="rounded-2xl bg-muted p-3 text-xs" data-testid="admin-otp-override-reason"><b>Delivery OTP was overridden.</b> Reason: {o.otp_override_reason}</p>}
       {o.payment?.provider === "razorpay" && (
         <section className="rounded-2xl border border-border p-4 text-xs" data-testid="admin-order-razorpay">
           <p className="mb-1 text-sm font-bold">Online payment (Razorpay)</p>
@@ -134,9 +171,17 @@ const OrderPanel = ({ number, onChanged }) => {
       <section data-testid="admin-order-notifications">
         <h4 className="mb-2 font-bold">Customer notifications</h4>
         <ul className="space-y-1 text-xs">{o.notifications.map((n, k) => <li key={k}><b className="capitalize">{n.channel}</b> · {n.template} · <span className={n.status === "sent" ? "text-pistachio" : "text-strawberry"}>{n.status.replace("_", " ")}</span></li>)}</ul>
-        <p className="mt-1 text-[11px] text-muted-foreground">In-app notifications are always delivered. WhatsApp updates are sent by you with the green button above (automatic WhatsApp is not connected).</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">In-app notifications are always delivered. Email, SMS and WhatsApp channels are switched in Business settings; SMS/WhatsApp show as "skipped" until a provider account is connected — use the green button above to send WhatsApp updates by hand.</p>
       </section>
       <Receipt o={o} />
+      <Dialog open={overrideOpen} onOpenChange={(v) => !v && setOverrideOpen(false)}>
+        <DialogContent className="rounded-3xl">
+          <DialogHeader><DialogTitle>Override delivery OTP — {o.order_number}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">Use only when the customer cannot share the code (e.g. phone unreachable, handed to a family member). The reason is saved in the audit log and the order history.</p>
+          <textarea data-testid="admin-otp-override-reason-input" rows={3} maxLength={300} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Reason (required, at least 5 characters)" className="w-full rounded-2xl border border-border p-3 text-sm" />
+          <button data-testid="admin-otp-override-confirm" disabled={overrideReason.trim().length < 5} onClick={overrideOtp} className="rounded-full bg-strawberry py-3 font-bold text-white disabled:opacity-50">Mark delivered without OTP</button>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!reasonOpen} onOpenChange={(v) => !v && setReasonOpen(null)}>
         <DialogContent className="rounded-3xl">
           <DialogHeader><DialogTitle>{ACTION_LABELS[reasonOpen]} — {o.order_number}</DialogTitle></DialogHeader>

@@ -35,6 +35,8 @@ CUSTOMER_COPY = {
     "refund_pending": ("Your refund has started", "We've started a refund of the full amount to your original "
                        "payment method. It usually reaches your account in 5–7 working days."),
     "refunded": ("Your refund is complete", "The refund for this order has been processed to your original payment method."),
+    "otp_resent": ("Your new delivery OTP", "Your delivery partner asked us to send you a fresh delivery code. "
+                   "Please share the new OTP below only when you receive your order."),
 }
 
 
@@ -193,6 +195,7 @@ CUSTOMER_COPY_TE = {
     "accepted": ("మీ ఆర్డర్ నిర్ధారించబడింది", "శుభవార్త — షాప్ మీ ఆర్డర్‌ను అంగీకరించింది, త్వరలో తయారు చేస్తుంది."),
     "ready_for_pickup": ("మీ ఆర్డర్ పికప్‌కు సిద్ధం", "మీ ఆర్డర్ ప్యాక్ చేసి ఉంది. దయచేసి షాప్ నుండి తీసుకెళ్లండి."),
     "out_for_delivery": ("మీ ఆర్డర్ వస్తోంది", "మా డెలివరీ భాగస్వామి మీ ఆర్డర్‌తో బయలుదేరారు. దయచేసి ఫోన్ దగ్గర ఉంచుకోండి."),
+    "otp_resent": ("మీ కొత్త డెలివరీ OTP", "మీ డెలివరీ భాగస్వామి కొత్త డెలివరీ కోడ్ పంపమని కోరారు. ఆర్డర్ అందుకున్నప్పుడు మాత్రమే కింది OTP చెప్పండి."),
     "delivered": ("మీ ఆర్డర్ డెలివరీ అయింది", "ఆనందించండి! ICEPOPS ను ఎంచుకున్నందుకు ధన్యవాదాలు."),
     "cancelled": ("మీ ఆర్డర్ రద్దు అయింది", "మీ ఆర్డర్ రద్దు చేయబడింది. మీరు చెల్లించి ఉంటే, ఆ మొత్తం తిరిగి ఇస్తాము."),
     "payment_paid": ("చెల్లింపు అందింది", "ఈ ఆర్డర్‌కు మీ చెల్లింపు నమోదైంది. ధన్యవాదాలు!"),
@@ -206,14 +209,32 @@ LABELS_TE = {"Hi": "నమస్కారం", "Order update": "ఆర్డర�
              "Questions? Just call or WhatsApp us on": "సందేహాలు ఉన్నాయా? కాల్ లేదా WhatsApp చేయండి:"}
 
 
+def _otp_block(order: Order, lang: str) -> str:
+    rider = ""
+    if order.rider_name:
+        rider = escape(order.rider_name) + (f" · <a href=\"tel:+91{escape(order.rider_phone)}\" style=\"color:{CHOCO}\">{escape(order.rider_phone)}</a>" if order.rider_phone else "")
+    label = "డెలివరీ OTP" if lang == "te" else "Delivery OTP"
+    hint = ("ఆర్డర్ అందుకున్నప్పుడు మాత్రమే ఈ కోడ్ రైడర్‌కు చెప్పండి." if lang == "te"
+            else "Share this code with the rider only when you receive your order.")
+    rider_label = "డెలివరీ భాగస్వామి" if lang == "te" else "Delivery partner"
+    return (f'<div style="margin-top:16px;padding:16px;border-radius:16px;background:#FFF4E5;text-align:center">'
+            + (f'<p style="margin:0 0 6px;{FONT};font-size:13px;color:{MUTED}">{rider_label}: {rider}</p>' if rider else "")
+            + f'<p style="margin:0;{FONT};font-size:13px;color:{MUTED}">{label}</p>'
+            f'<p style="margin:4px 0 6px;{FONT};font-size:34px;font-weight:800;letter-spacing:8px;color:{CHOCO}">{escape(order.delivery_otp or "")}</p>'
+            f'<p style="margin:0;{FONT};font-size:12px;color:{MUTED}">{hint}</p></div>')
+
+
 def customer_order_email(order: Order, event: str, s: BusinessSettings, loyalty: dict | None = None,
-                         lang: str = "en") -> tuple[str, str]:
+                         lang: str = "en", otp_line: str = "") -> tuple[str, str]:
     L = (lambda k: LABELS_TE.get(k, k)) if lang == "te" else (lambda k: k)
     methods = {m.get("code"): m.get("label") for m in (s.payment_methods or [])}
-    title, text = (CUSTOMER_COPY_TE if lang == "te" else CUSTOMER_COPY)[event]
+    copy = CUSTOMER_COPY_TE if lang == "te" else CUSTOMER_COPY
+    title, text = copy.get(event) or copy["out_for_delivery"]
     body = f"{L('Hi')} {escape(order.customer_name)},<br>{escape(text)}"
     if event == "cancelled" and order.cancel_reason:
         body += f'<br><br><span style="color:{MUTED}">Reason:</span> {escape(order.cancel_reason)}'
+    if otp_line and order.delivery_otp:
+        body += _otp_block(order, lang)
     rows = (_hero(f"{L('Order update')} · {paise(order.total_paise)}", title, body, order)
             + (_loyalty_block(loyalty, order) if loyalty else "")
             + (f'<tr><td style="padding:4px 32px 0">{_button(f"{APP_PUBLIC_URL}/orders/{order.order_number}#rate", L("Rate your order"), ORANGE, "#FFFFFF")}</td></tr>'

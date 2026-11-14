@@ -9,6 +9,7 @@ from core.emailer import EMAIL_FROM_NAME, EmailError, send_email
 from core.models import Notification, NotificationOutbox, Order, Role, User, UserRole
 from core.email_templates import customer_order_email, password_reset_email, seller_new_order_email
 from core.loyalty import loyalty_promo, loyalty_status
+from core.messaging import ProviderNotConfigured, get_provider, order_params, render_template
 from core.store import get_settings, paise
 
 import asyncio
@@ -63,6 +64,7 @@ CUSTOMER_MESSAGES = {
     "refunded": ("Refunded", "Your refund for order {n} has been completed."),
     "payment_paid": ("Payment received", "Payment for order {n} has been recorded."),
     "payment_failed": ("Payment failed", "Payment for order {n} did not go through."),
+    "otp_resent": ("New delivery OTP", "A new delivery OTP was issued for order {n}."),
 }
 CUSTOMER_MESSAGES_TE = {
     "placed": ("ఆర్డర్ అందింది", "మీ ఆర్డర్ {n} మాకు అందింది. త్వరలో నిర్ధారిస్తాము."),
@@ -76,9 +78,30 @@ CUSTOMER_MESSAGES_TE = {
     "refunded": ("రీఫండ్ పూర్తయింది", "ఆర్డర్ {n} రీఫండ్ పూర్తయింది."),
     "payment_paid": ("చెల్లింపు అందింది", "ఆర్డర్ {n} చెల్లింపు నమోదైంది."),
     "payment_failed": ("చెల్లింపు విఫలమైంది", "ఆర్డర్ {n} చెల్లింపు పూర్తి కాలేదు."),
+    "otp_resent": ("కొత్త డెలివరీ OTP", "ఆర్డర్ {n} కోసం కొత్త డెలివరీ OTP జారీ చేయబడింది."),
 }
 EMAIL_EVENTS = {"placed", "accepted", "cancelled", "ready_for_pickup", "out_for_delivery", "delivered",
-                "payment_paid", "payment_failed", "refund_pending", "refunded"}
+                "payment_paid", "payment_failed", "refund_pending", "refunded", "otp_resent"}
+# Events that also go to the customer's phone (SMS / WhatsApp) when a provider is configured.
+PHONE_EVENTS = {"placed", "accepted", "ready_for_pickup", "out_for_delivery", "otp_resent", "delivered", "cancelled",
+                "refund_pending", "refunded"}
+OTP_EVENTS = {"out_for_delivery", "otp_resent"}
+
+
+def otp_visible_to_customer(order: Order) -> bool:
+    """Delivery OTP is shared only for delivery orders that are not unpaid online orders."""
+    if order.fulfilment_type != "delivery" or not order.delivery_otp:
+        return False
+    return not (order.payment_method == "online" and order.payment_status != "paid")
+
+
+def rider_otp_line(order: Order, lang: str = "en") -> str:
+    if not otp_visible_to_customer(order):
+        return ""
+    rider = f"{order.rider_name} ({order.rider_phone})" if order.rider_name and order.rider_phone else (order.rider_name or "")
+    if lang == "te":
+        return (f"డెలివరీ భాగస్వామి: {rider}. " if rider else "") + f"డెలివరీ OTP: {order.delivery_otp}. ఆర్డర్ అందుకున్నప్పుడు మాత్రమే చెప్పండి."
+    return (f"Rider: {rider}. " if rider else "") + f"Delivery OTP: {order.delivery_otp}. Share it only when you receive your order."
 
 
 async def admin_ids(db: AsyncSession) -> list[int]:
@@ -95,6 +118,8 @@ async def notify_order_event(db: AsyncSession, order: Order, event: str, extra: 
     lang = await user_lang(db, order.user_id)
     title, body = (CUSTOMER_MESSAGES_TE if lang == "te" else CUSTOMER_MESSAGES)[event]
     text = body.format(n=order.order_number, reason=order.cancel_reason or "").strip()
+    if event in OTP_EVENTS:
+        text = f"{text} {rider_otp_line(order, lang)}".strip()
     db.add(Notification(user_id=order.user_id, title=title, order_number=order.order_number,
                         body=f"{text} {extra}".strip()[:500]))
     if event == "placed":
@@ -120,21 +145,56 @@ async def _record(db, channel, recipient, template, order_number, status, error=
                               status=status, error=error, provider_id=provider_id))
 
 
+async def _send_phone(db, channel: str, order: Order, event: str) -> bool:
+    """Send one SMS/WhatsApp message through the configured provider. Returns True when delivered."""
+    provider = get_provider(channel)
+    recipient = order.customer_phone or "unspecified"
+    text = render_template(event, order_params(order))
+    if not text:
+        return False
+    if provider is None:
+        await _record(db, channel, recipient, event, order.order_number, "skipped",
+                      error=f"No {channel.upper()} provider configured yet")
+        return False
+    try:
+        pid = await provider.send(recipient, text, event, order_params(order))
+        await _record(db, channel, recipient, event, order.order_number, "sent", provider_id=pid)
+        return True
+    except ProviderNotConfigured as e:
+        await _record(db, channel, recipient, event, order.order_number, "skipped", error=str(e)[:300])
+    except Exception as e:  # provider/network failure
+        logger.warning("Order %s %s failed: %s", order.order_number, channel, e)
+        await _record(db, channel, recipient, event, order.order_number, "failed", error=str(e)[:300])
+    return False
+
+
 async def deliver_external(order_id: int, event: str) -> None:
-    """Background task: email + WhatsApp hand-off, each recorded in the outbox with its real status."""
+    """Background task: email + SMS/WhatsApp hand-off, each recorded in the outbox with its real status.
+
+    Channels are switched in Admin -> Business settings (notify_email/sms/whatsapp_enabled). WhatsApp falls
+    back to SMS when it is enabled but fails or has no provider.
+    """
     async with SessionLocal() as db:
         order = await db.get(Order, order_id)
         if not order or event not in EMAIL_EVENTS:
             return
         settings = await get_settings(db)
+        email_on = getattr(settings, "notify_email_enabled", True)
+        sms_on = getattr(settings, "notify_sms_enabled", False)
+        wa_on = getattr(settings, "notify_whatsapp_enabled", False)
         loyalty = None
         if event == "delivered":
             promo = await loyalty_promo(db)
             if promo and promo.is_enabled:
                 loyalty = await loyalty_status(db, order.user_id, promo)
-        subject, html = customer_order_email(order, event, settings, loyalty, await user_lang(db, order.user_id))
-        # Deliver customer email if a valid recipient is available
-        if order.customer_email and not order.customer_email.endswith("@customer.icepops.in") and "@" in order.customer_email:
+        subject, html = customer_order_email(order, event, settings, loyalty, await user_lang(db, order.user_id),
+                                             otp_line=rider_otp_line(order) if event in OTP_EVENTS else "")
+        # --- Email -------------------------------------------------------------------------------
+        real_email = order.customer_email and not order.customer_email.endswith("@customer.icepops.in") and "@" in order.customer_email
+        if not email_on:
+            await _record(db, "email", order.customer_email or "unspecified", event, order.order_number, "disabled",
+                          error="Email channel switched off in Business settings")
+        elif real_email:
             try:
                 pid = await send_email(to=order.customer_email, subject=subject, html=html)
                 await _record(db, "email", order.customer_email, event, order.order_number, "sent", provider_id=pid)
@@ -145,8 +205,21 @@ async def deliver_external(order_id: int, event: str) -> None:
         else:
             await _record(db, "email", order.customer_email or "unspecified", event, order.order_number, "skipped",
                           error="No real customer email provided (guest phone order)")
-        await _record(db, "whatsapp", order.customer_phone, event, order.order_number, "not_connected",
-                      error="WhatsApp provider not connected yet")
+        # --- Phone (WhatsApp first, SMS fallback) ---------------------------------------------------
+        if event in PHONE_EVENTS and order.customer_phone:
+            delivered_phone = False
+            if wa_on:
+                delivered_phone = await _send_phone(db, "whatsapp", order, event)
+            elif not sms_on:
+                await _record(db, "whatsapp", order.customer_phone, event, order.order_number, "disabled",
+                              error="WhatsApp channel switched off in Business settings")
+            if not delivered_phone:
+                if sms_on:
+                    await _send_phone(db, "sms", order, event)
+                else:
+                    await _record(db, "sms", order.customer_phone, event, order.order_number, "disabled",
+                                  error="SMS channel switched off in Business settings")
+        # --- Seller alert ------------------------------------------------------------------------------
         if event == "placed":
             try:
                 s_subject, s_html = seller_new_order_email(order, settings)

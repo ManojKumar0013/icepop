@@ -85,6 +85,31 @@ export default function RiderPortal() {
       loadOrders();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Invalid OTP");
+      setOtpInput("");
+      // Refresh attempts / lock state shown in the modal
+      try {
+        const { data } = await api.get("/rider/orders");
+        const list = Array.isArray(data) ? data : data.orders || [];
+        const fresh = list.find((x) => x.order_number === verifyingOrder.order_number);
+        if (fresh) setVerifyingOrder(fresh);
+        setOrders(list);
+      } catch { /* ignore */ }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!verifyingOrder || submitting) return;
+    setSubmitting(true);
+    try {
+      const { data } = await api.post(`/rider/orders/${verifyingOrder.order_number}/resend-otp`);
+      toast.success(data.message || "New OTP sent to the customer");
+      setVerifyingOrder({ ...verifyingOrder, otp_attempts: 0, otp_attempts_left: 5, otp_locked: false, otp_resends: data.otp_resends, otp_resends_left: data.otp_resends_left });
+      setOtpInput("");
+      loadOrders();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not resend OTP");
     } finally {
       setSubmitting(false);
     }
@@ -302,8 +327,19 @@ export default function RiderPortal() {
 
             <p className="text-xs text-choco/70">
               Ask <span className="font-bold text-choco">{verifyingOrder.customer_name}</span> for the 4-digit Delivery
-              OTP displayed on their ICEPOPS screen or SMS.
+              OTP shown on their ICEPOPS order page (also sent by email).
             </p>
+            <div className="flex items-center justify-between rounded-2xl bg-cream/60 px-3 py-2 text-[11px] text-choco/80" data-testid="rider-otp-state">
+              {verifyingOrder.otp_locked ? (
+                <span className="font-bold text-strawberry" data-testid="rider-otp-locked">Locked after 5 wrong attempts — resend a new OTP or ask the shop to override.</span>
+              ) : (
+                <span>Attempts left: <b>{verifyingOrder.otp_attempts_left ?? 5}</b>/5</span>
+              )}
+              <button type="button" onClick={handleResendOtp} disabled={submitting || (verifyingOrder.otp_resends_left ?? 3) <= 0}
+                data-testid="rider-otp-resend" className="ml-2 shrink-0 rounded-full border border-border bg-white px-3 py-1 font-bold text-choco disabled:opacity-50">
+                Resend OTP ({verifyingOrder.otp_resends_left ?? 3} left)
+              </button>
+            </div>
 
             {(verifyingOrder.payment_method === "cod" || verifyingOrder.payment_method === "pay_on_delivery") && verifyingOrder.payment_status !== "paid" && (
               <div className="rounded-2xl bg-red-50 border border-red-200 p-3 text-xs text-red-800 space-y-1">
@@ -345,7 +381,7 @@ export default function RiderPortal() {
               </button>
               <button
                 onClick={handleVerifyDelivery}
-                disabled={submitting || otpInput.length < 4}
+                disabled={submitting || otpInput.length < 4 || verifyingOrder.otp_locked}
                 className="flex-1 rounded-2xl bg-strawberry py-2.5 text-xs font-bold text-white shadow-md hover:bg-strawberry/90 disabled:opacity-50"
               >
                 {submitting ? "Verifying..." : "Confirm & Complete"}

@@ -8,10 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
-from core.loyalty import loyalty_promo, loyalty_text
-from core.models import LoyaltyStamp, Order, OrderItem, OrderStatusHistory, Payment, User
-from core.notify import deliver_external, notify_order_event, user_lang
-from core.security import require_user
+from core.delivery import OTP_MAX_RESENDS, check_delivery_otp, complete_delivery, new_delivery_otp, otp_state
+from core.loyalty import loyalty_promo, loyalty_text  # noqa: F401 (kept for other rider views)
+from core.models import LoyaltyStamp, Order, OrderItem, OrderStatusHistory, Payment, User  # noqa: F401
+from core.notify import deliver_external, notify_order_event, user_lang  # noqa: F401
+from core.security import audit, require_user
 
 router = APIRouter(prefix="/rider", tags=["rider"])
 
@@ -87,6 +88,7 @@ async def list_rider_orders(
             "payment_status": o.payment_status,
             "rider_name": o.rider_name,
             "rider_phone": o.rider_phone,
+            **otp_state(o),
             "google_maps_url": maps_url,
             "created_at": o.created_at.isoformat(),
             "items": [
@@ -155,65 +157,56 @@ async def verify_and_complete_delivery(
     rider: User = Depends(require_rider),
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify customer 4-digit OTP and mark order delivered with instant loyalty stamp trigger."""
+    """Verify the customer's 4-digit delivery OTP (5 wrong attempts -> locked) and mark the order delivered."""
     order = (await db.execute(select(Order).where(Order.order_number == number).with_for_update())).scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.status != "out_for_delivery":
         raise HTTPException(status_code=400, detail=f"Order is '{order.status}', not out_for_delivery.")
 
-    # OTP check
-    expected_otp = (order.delivery_otp or "").strip()
-    if expected_otp and body.otp.strip() != expected_otp:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Delivery OTP. Please ask the customer to share their 4-digit code from the ICEPOPS screen.",
-        )
-
-    prev = order.status
-    order.status = "delivered"
-
-    if order.payment_method == "cod" and order.payment_status != "paid":
-        order.payment_status = "paid"
-        pmt = (await db.execute(select(Payment).where(Payment.order_id == order.id))).scalar_one_or_none()
-        if pmt:
-            pmt.status = "paid"
-            pmt.details = {
-                **(pmt.details or {}),
-                "collected_by_rider": order.rider_name or "rider",
-                "collected_at": datetime.now(timezone.utc).isoformat(),
-            }
-
-    # Award loyalty stamps if applicable
-    extra = ""
-    lp = await loyalty_promo(db)
-    if lp and lp.is_enabled and not (await db.execute(select(LoyaltyStamp.id).where(LoyaltyStamp.order_id == order.id))).first():
-        db.add(LoyaltyStamp(user_id=order.user_id, order_id=order.id))
-        await db.flush()
-        extra = await loyalty_text(db, order.user_id, await user_lang(db, order.user_id))
+    error = check_delivery_otp(order, body.otp)
+    if error:
+        locked = bool(order.otp_locked)
+        await db.commit()  # persist the wrong attempt / lock
+        raise HTTPException(status_code=423 if locked else 400, detail=error)
 
     rider_label = order.rider_name or "Delivery Rider"
     note_content = f"Delivered and verified with 4-digit OTP by {rider_label}"
     if body.note:
         note_content += f" ({body.note.strip()})"
-
-    db.add(
-        OrderStatusHistory(
-            order_id=order.id,
-            from_status=prev,
-            to_status="delivered",
-            note=note_content,
-            actor_user_id=rider.id,
-        )
-    )
-
+    extra = await complete_delivery(db, order, rider, note_content)
     await notify_order_event(db, order, "delivered", extra)
     await db.commit()
     background.add_task(deliver_external, order.id, "delivered")
+    return {"ok": True, "order_number": order.order_number, "status": "delivered", "message": "Delivery verified successfully!"}
 
-    return {
-        "ok": True,
-        "order_number": order.order_number,
-        "status": "delivered",
-        "message": "Delivery verified successfully!",
-    }
+
+@router.post("/orders/{number}/resend-otp")
+async def resend_delivery_otp(
+    number: str,
+    background: BackgroundTasks,
+    rider: User = Depends(require_rider),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a fresh delivery OTP (max 3 times per order), unlock, and re-send it to the customer
+    (in-app + email now; SMS/WhatsApp as soon as a provider is connected)."""
+    order = (await db.execute(select(Order).where(Order.order_number == number).with_for_update())).scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "out_for_delivery":
+        raise HTTPException(status_code=400, detail=f"Order is '{order.status}', not out_for_delivery.")
+    if (order.otp_resends or 0) >= OTP_MAX_RESENDS:
+        raise HTTPException(status_code=429, detail=f"Resend limit reached ({OTP_MAX_RESENDS}). Please ask the shop to override the delivery OTP.")
+    order.delivery_otp = new_delivery_otp()
+    order.otp_resends = (order.otp_resends or 0) + 1
+    order.otp_attempts = 0
+    order.otp_locked = False
+    db.add(OrderStatusHistory(order_id=order.id, from_status=order.status, to_status=order.status,
+                              note=f"Delivery OTP re-sent to customer ({order.otp_resends}/{OTP_MAX_RESENDS}) by {order.rider_name or rider.name}",
+                              actor_user_id=rider.id))
+    audit(db, rider, "delivery_otp_resent", "order", order.order_number, {"resends": order.otp_resends})
+    await notify_order_event(db, order, "otp_resent")
+    await db.commit()
+    background.add_task(deliver_external, order.id, "otp_resent")
+    return {"ok": True, "order_number": order.order_number, **otp_state(order),
+            "message": "A new delivery OTP has been sent to the customer."}

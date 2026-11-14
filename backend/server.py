@@ -1,8 +1,6 @@
 import logging
 
-from sqlalchemy import text
-
-from core.config import CORS_ORIGINS, CSRF_HEADER, DATABASE_URL  # noqa: loads .env first
+from core.config import CORS_ORIGINS, CSRF_HEADER  # noqa: loads .env first
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,8 +8,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
-from core.db import Base, SessionLocal, engine
+from core.db import SessionLocal, engine
 from core import models  # noqa: F401
+from core.migrate import run_migrations
 from core.seed import seed
 from routes import admin, admin_catalog, admin_settings, auth, cart, catalog, engagement, giftcards, orders, payments, pos, rider
 
@@ -103,23 +102,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.on_event("startup")
 async def startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        if "postgres" in DATABASE_URL:
-            for stmt in ("ALTER TABLE products ADD COLUMN IF NOT EXISTS name_te VARCHAR(120)",
-                         "ALTER TABLE products ADD COLUMN IF NOT EXISTS description_te TEXT",
-                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT 'en'",
-                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20)",
-                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_balance_paise INTEGER DEFAULT 0",
-                         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_id INTEGER",
-                         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_otp VARCHAR(6)",
-                         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rider_name VARCHAR(80)",
-                         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS rider_phone VARCHAR(15)",
-                         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_pos BOOLEAN DEFAULT FALSE",
-                         "ALTER TABLE orders ALTER COLUMN fulfilment_type TYPE VARCHAR(20)",
-                         "ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rush_mode BOOLEAN DEFAULT FALSE",
-                         "ALTER TABLE business_settings ADD COLUMN IF NOT EXISTS rush_message VARCHAR(300)"):
-                await conn.execute(text(stmt))
+    # Schema is managed by Alembic (backend/alembic/versions). Every migration is additive and
+    # idempotent, so applying `head` on every boot is safe for the live production database.
+    await run_migrations(engine)
     async with SessionLocal() as db:
         await seed(db)
     logger.info("ICEPOPS database ready")

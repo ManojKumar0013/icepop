@@ -55,6 +55,13 @@ const Business = ({ d, setD }) => {
         <Check label="Rush hour mode (pause incoming orders temporarily during peak rushes)" checked={f.rush_mode} onChange={set("rush_mode")} testid="settings-rush-checkbox" />
         {f.rush_mode && <input className={adminInput} placeholder="Message for customers, e.g. High rush at parlour right now — orders paused for 15 mins" value={f.rush_message || ""} onChange={(e) => set("rush_message")(e.target.value)} data-testid="settings-rush-message" />}
       </div>
+      <div className="space-y-2 rounded-2xl border border-border bg-white p-4" data-testid="settings-notification-channels">
+        <p className="text-sm font-bold">Customer notifications</p>
+        <p className="text-xs text-muted-foreground">Order updates and the delivery OTP are always shown in the app. Switch the extra channels on or off here.</p>
+        <Check label="Email updates (order placed, accepted, out for delivery with OTP, delivered, cancelled, refunds)" checked={f.notify_email_enabled} onChange={set("notify_email_enabled")} testid="settings-notify-email" />
+        <Check label={`SMS updates${d.notification_channels?.sms?.configured ? "" : " — no SMS provider connected yet (messages are recorded as skipped)"}`} checked={f.notify_sms_enabled} onChange={set("notify_sms_enabled")} testid="settings-notify-sms" />
+        <Check label={`WhatsApp updates${d.notification_channels?.whatsapp?.configured ? "" : " — no WhatsApp provider connected yet (falls back to SMS when available)"}`} checked={f.notify_whatsapp_enabled} onChange={set("notify_whatsapp_enabled")} testid="settings-notify-whatsapp" />
+      </div>
       <button onClick={save} data-testid="settings-save-button" className="rounded-full bg-choco px-6 py-3 text-sm font-bold text-cream">Save business details</button>
     </div>
   );

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import secrets
@@ -5,16 +6,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import COOKIE_SECURE, SESSION_COOKIE
+from core.config import COOKIE_SECURE, ENABLE_TEST_OTP, GOOGLE_CLIENT_ID, OTP_RESEND_COOLDOWN_SECONDS, OTP_TTL_SECONDS, SESSION_COOKIE
 from core.db import get_db
 from core.models import PasswordResetToken, Role, Session, User
 from core.notify import send_password_reset
+from core.otp import PURPOSE_SIGNUP_EMAIL, issue_otp, verify_otp
 from core.security import (
     client_ip, create_session, hash_password, normalize_phone, rate_limit, record_hit, require_user, sha256,
     user_out, verify_password, get_optional_user, _token_from,
@@ -26,10 +30,8 @@ from core.emailer import send_email, EmailError
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+# Legacy Emergent-hosted Google sign-in (kept working until GOOGLE_CLIENT_ID is configured).
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
-
-# In-memory store for sign-up OTPs: email.lower() -> { "otp": str, "expires_at": datetime, "attempts": int }
-_signup_otps: dict[str, dict] = {}
 
 
 class SendOtpIn(BaseModel):
@@ -84,8 +86,24 @@ class GoogleIn(BaseModel):
     session_id: str = Field(min_length=5, max_length=500)
 
 
+class GoogleCredentialIn(BaseModel):
+    credential: str = Field(min_length=20, max_length=4000)
+
+
 async def _role(db, name) -> Role:
     return (await db.execute(select(Role).where(Role.name == name))).scalar_one()
+
+
+@router.get("/config")
+async def auth_config():
+    """Public, non-secret auth configuration for the frontend."""
+    return {
+        "google_client_id": GOOGLE_CLIENT_ID or None,
+        "google_mode": "gis" if GOOGLE_CLIENT_ID else "emergent",
+        "otp_ttl_seconds": OTP_TTL_SECONDS,
+        "otp_resend_cooldown_seconds": OTP_RESEND_COOLDOWN_SECONDS,
+        "test_otp_enabled": ENABLE_TEST_OTP,
+    }
 
 
 @router.post("/send-signup-otp")
@@ -99,28 +117,22 @@ async def send_signup_otp(body: SendOtpIn, request: Request, db: AsyncSession = 
     if existing:
         raise HTTPException(status_code=409, detail="An account with this email already exists. Please log in.")
 
-    # 2. Generate secure 6-digit numeric OTP
-    otp = f"{secrets.randbelow(900000) + 100000}"
-    _signup_otps[email] = {
-        "otp": otp,
-        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
-        "attempts": 0,
-    }
+    # 2. Issue a hashed, DB-backed OTP (5 min expiry, 5 attempts, single-use, 30 s resend cooldown)
+    otp = await issue_otp(db, email, PURPOSE_SIGNUP_EMAIL, ip=client_ip(request))
+    await db.commit()
 
     # 3. Send email with ICEPOPS branding
     s = await get_settings(db)
     subject, html = signup_otp_email(body.name or "", otp, s)
     try:
         await send_email(to=email, subject=subject, html=html)
-        logger.info(f"📧 [Signup OTP Sent] To: {email} | Code: {otp}")
+        logger.info("Signup OTP email sent to %s", email)
     except EmailError as e:
-        logger.warning(f"Could not send signup OTP email to {email}: {e}")
+        logger.warning("Could not send signup OTP email to %s: %s", email, e)
 
-    return {
-        "ok": True,
-        "message": f"Verification code sent to {email}",
-        "debug_otp": otp,
-    }
+    # The code is never returned to the client.
+    return {"ok": True, "message": f"Verification code sent to {email}",
+            "expires_in_seconds": OTP_TTL_SECONDS, "resend_after_seconds": OTP_RESEND_COOLDOWN_SECONDS}
 
 
 @router.post("/register")
@@ -128,44 +140,8 @@ async def register(body: RegisterIn, request: Request, response: Response, db: A
     rate_limit(f"register:{client_ip(request)}", 15, 3600)
     email = body.email.lower().strip()
 
-    # Verify OTP (allow bypass for test suite if header set, universal test OTP '000000',
-    # or automated test scripts using test domain)
-    is_test_bypass = (
-        request.headers.get("x-bypass-otp") == "test"
-        or body.otp == "000000"
-        or (
-            not body.otp
-            and "httpx" in request.headers.get("user-agent", "").lower()
-            and any(email.endswith(d) for d in ("@test.com", "@example.com"))
-        )
-    )
-    if not is_test_bypass:
-        stored = _signup_otps.get(email)
-        if not stored:
-            raise HTTPException(
-                status_code=400,
-                detail="Please request an email verification code first.",
-            )
-        if stored["expires_at"] < datetime.now(timezone.utc):
-            _signup_otps.pop(email, None)
-            raise HTTPException(
-                status_code=400,
-                detail="Verification code has expired. Please request a new code.",
-            )
-        if not body.otp or stored["otp"] != body.otp.strip():
-            stored["attempts"] = stored.get("attempts", 0) + 1
-            if stored["attempts"] >= 5:
-                _signup_otps.pop(email, None)
-                raise HTTPException(
-                    status_code=400,
-                    detail="Too many invalid OTP attempts. Please request a new code.",
-                )
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid verification code. Please check your email and try again.",
-            )
-        # OTP verified!
-        _signup_otps.pop(email, None)
+    # Verify the emailed OTP. No bypasses: every sign-up needs the real code.
+    await verify_otp(db, email, PURPOSE_SIGNUP_EMAIL, body.otp)
 
     if (await db.execute(select(User.id).where(User.email == email))).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists. Please log in.")
@@ -246,6 +222,37 @@ async def google_session(body: GoogleIn, request: Request, response: Response, d
         raise HTTPException(status_code=403, detail="This account is disabled.")
     else:
         user.picture = data.get("picture") or user.picture
+    token = await create_session(db, user, response)
+    await db.commit()
+    return user_out(user, token=token)
+
+
+@router.post("/google/credential")
+async def google_credential(body: GoogleCredentialIn, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Direct Google Identity Services sign-in: the browser sends the Google ID token ("credential")."""
+    rate_limit(f"google:{client_ip(request)}", 20, 900)
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured yet.")
+    try:
+        info = await asyncio.to_thread(google_id_token.verify_oauth2_token, body.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
+    except ValueError as e:
+        logger.warning("Google credential rejected: %s", e)
+        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+    if info.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(status_code=401, detail="Google sign-in failed.")
+    email = (info.get("email") or "").lower()
+    if not email or not info.get("email_verified", False):
+        raise HTTPException(status_code=401, detail="Google account email is not verified.")
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if not user:
+        user = User(name=(info.get("name") or email.split("@")[0])[:80], email=email, picture=info.get("picture"),
+                    roles=[await _role(db, "customer")])
+        db.add(user)
+        await db.flush()
+    elif not user.is_active:
+        raise HTTPException(status_code=403, detail="This account is disabled.")
+    else:
+        user.picture = info.get("picture") or user.picture
     token = await create_session(db, user, response)
     await db.commit()
     return user_out(user, token=token)

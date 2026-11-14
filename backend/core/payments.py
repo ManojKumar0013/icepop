@@ -6,6 +6,7 @@ import secrets
 import razorpay
 from fastapi import HTTPException
 
+from core.config import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
 from core.models import Order, OrderStatusHistory, Payment
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,9 @@ OFFLINE_METHODS = {"pay_on_delivery": "delivery", "pay_at_pickup": "pickup"}
 
 
 def rzp_keys() -> tuple[str, str | None]:
-    key_id = os.environ.get("RAZORPAY_KEY_ID") or "rzp_test_Txd5kzeL6T6dBG"
-    key_secret = os.environ.get("RAZORPAY_KEY_SECRET") or "PP5x3Sd3x7Oah89TDhhWsDYu"
+    # Keys come only from the environment (core.config validates them in production).
+    key_id = (os.environ.get("RAZORPAY_KEY_ID") or RAZORPAY_KEY_ID or "").strip()
+    key_secret = (os.environ.get("RAZORPAY_KEY_SECRET") or RAZORPAY_KEY_SECRET or "").strip()
     return key_id, key_secret
 
 

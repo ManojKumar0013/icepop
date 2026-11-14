@@ -64,9 +64,31 @@ def new_session():
     return s
 
 
+def signup_otp(email):
+    """Request the signup OTP and read it from the server console (ENABLE_TEST_OTP=true, dev only).
+    The API never returns the code and there is no bypass any more."""
+    import re
+    import time
+    r = requests.post(f"{API}/auth/send-signup-otp", json={"email": email, "name": "Test"}, headers=H, timeout=20)
+    assert r.status_code == 200, r.text
+    assert "debug_otp" not in r.json()
+    pat = re.compile(r"\[TEST OTP\] purpose=\S+ target=" + re.escape(email.lower()) + r" code=(\d{6})")
+    for _ in range(10):
+        for path in ("/var/log/supervisor/backend.err.log", "/var/log/supervisor/backend.out.log"):
+            try:
+                found = pat.findall(open(path, encoding="utf-8", errors="ignore").read())
+            except FileNotFoundError:
+                continue
+            if found:
+                return found[-1]
+        time.sleep(0.5)
+    pytest.skip("Signup OTP not found in backend log (set ENABLE_TEST_OTP=true in backend/.env)")
+
+
 def register(name, email, phone, password="Test@12345"):
     s = new_session()
-    r = s.post(f"{API}/auth/register", json={"name": name, "email": email, "phone": phone, "password": password})
+    otp = signup_otp(email)
+    r = s.post(f"{API}/auth/register", json={"name": name, "email": email, "phone": phone, "password": password, "otp": otp})
     assert r.status_code == 200, r.text
     return s, r.json()
 
@@ -154,8 +176,11 @@ class TestSecurity:
         assert r.status_code == 422
         r = s.post(f"{API}/auth/register", json={"name": "TEST_x", "email": f"test_x_{RUN}@example.com", "phone": phone(), "password": "short"})
         assert r.status_code == 422
-        r = s.post(f"{API}/auth/register", json={"name": "TEST_x", "email": STATE["a_email"], "phone": phone(), "password": "Test@12345"})
+        # Existing email: send-signup-otp refuses with 409; register without a code is refused with 400.
+        r = s.post(f"{API}/auth/send-signup-otp", json={"email": STATE["a_email"], "name": "TEST_x"})
         assert r.status_code == 409
+        r = s.post(f"{API}/auth/register", json={"name": "TEST_x", "email": STATE["a_email"], "phone": phone(), "password": "Test@12345", "otp": "123456"})
+        assert r.status_code in (400, 409)
 
     def test_me_and_anon(self, cust_a):
         assert cust_a.get(f"{API}/auth/me").json()["roles"] == ["customer"]

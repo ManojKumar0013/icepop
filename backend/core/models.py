@@ -73,6 +73,23 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class OtpCode(Base):
+    """Hashed one-time passwords (signup email, phone signup/login, phone verification)."""
+    __tablename__ = "otp_codes"
+    __table_args__ = (Index("ix_otp_codes_target_purpose", "target", "purpose"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target: Mapped[str] = mapped_column(String(255))  # email (lower) or phone (+91XXXXXXXXXX)
+    purpose: Mapped[str] = mapped_column(String(30))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    superseded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True)
+
+
 class Address(Timestamped, Base):
     __tablename__ = "addresses"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -185,6 +202,10 @@ class BusinessSettings(Base):
     closure_message: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     rush_mode: Mapped[bool] = mapped_column(Boolean, default=False)
     rush_message: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    # Customer notification channels (admin switches). SMS/WhatsApp also need a configured provider.
+    notify_email_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    notify_sms_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    notify_whatsapp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     pickup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     delivery_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     default_delivery_fee_paise: Mapped[int] = mapped_column(Integer, default=3000)
@@ -267,6 +288,11 @@ class Order(Timestamped, Base):
     rider_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     rider_phone: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
     is_pos: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Delivery-OTP protection (rider portal): wrong attempts, lock after 5, resend counter (max 3), admin override
+    otp_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    otp_resends: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    otp_locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    otp_override_reason: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     items: Mapped[list["OrderItem"]] = relationship(lazy="selectin", order_by="OrderItem.id")
 
 
