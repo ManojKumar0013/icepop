@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const rawUrl = process.env.REACT_APP_BACKEND_URL || "";
+const rawUrl = (process.env.REACT_APP_BACKEND_URL || "").trim().replace(/\/+$/, "");
 // Normalize localhost to 127.0.0.1 to prevent Windows IPv6 (::1) ERR_CONNECTION_REFUSED
 const backendUrl = rawUrl.replace("://localhost:", "://127.0.0.1:").replace("://localhost/", "://127.0.0.1/");
 
@@ -9,6 +9,9 @@ export const api = axios.create({
   withCredentials: true,
   headers: { "X-CSRF-Guard": "1" },
 });
+
+// These storefront reads are public and can go straight to the backend without a CORS preflight.
+export const storefrontApi = axios.create({ baseURL: `${backendUrl}/api` });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("icepops_token");

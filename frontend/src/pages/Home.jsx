@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ArrowRight, Clock, IceCreamCone, MapPin, Phone, Sparkles, Truck, Gift, Users, CheckCircle2, Star } from "lucide-react";
-import { api } from "@/lib/api";
-import { useStore } from "@/context/StoreContext";
+import { ArrowRight, Clock, IceCreamCone, MapPin, Phone, Sparkles, Truck, Gift, Users, CheckCircle2 } from "lucide-react";
+import { useStorefrontData } from "@/lib/useStorefrontData";
+import { useStoreRequest } from "@/context/StoreContext";
 import { ProductCard } from "@/components/site/ProductCard";
 import { AutoIceCreamSlider } from "@/components/site/AutoIceCreamSlider";
 import { inr, to12h } from "@/lib/format";
 import { ReviewCard } from "@/components/site/Reviews";
+import { StorefrontStatus } from "@/components/site/StorefrontStatus";
 import { useLang } from "@/context/LangContext";
 
 const T = ({ s }) => useLang().t(s);
@@ -105,22 +106,26 @@ const ProductRow = ({ title, testid, items }) => items.length > 0 && (
   </section>
 );
 
-const Categories = ({ cats }) => (
+const Categories = ({ request }) => (
   <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <H2>Pick your treat</H2>
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-      {cats.map((c) => (
-        <Link key={c.id} to={`/menu?category=${c.slug}`} data-testid={`home-category-${c.slug}`} className="group relative aspect-[3/4] overflow-hidden rounded-3xl">
-          <img src={c.image_url} alt={c.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-          <div className="absolute inset-0 bg-gradient-to-t from-choco/85 via-choco/10 to-transparent" />
-          <span className="absolute bottom-4 left-4 right-4 font-display text-lg font-bold leading-tight text-cream">{c.name}</span>
-        </Link>
-      ))}
-    </div>
+    {!request.data ? (
+      <StorefrontStatus request={request} label="Loading categories…" testid="home-categories-status" />
+    ) : (
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {request.data.map((c) => (
+          <Link key={c.id} to={`/menu?category=${c.slug}`} data-testid={`home-category-${c.slug}`} className="group relative aspect-[3/4] overflow-hidden rounded-3xl">
+            <img src={c.image_url} alt={c.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+            <div className="absolute inset-0 bg-gradient-to-t from-choco/85 via-choco/10 to-transparent" />
+            <span className="absolute bottom-4 left-4 right-4 font-display text-lg font-bold leading-tight text-cream">{c.name}</span>
+          </Link>
+        ))}
+      </div>
+    )}
   </section>
 );
 
-const Testimonials = ({ items }) => (
+const Testimonials = ({ request }) => (
   <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8" data-testid="testimonials-section">
     <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
       <div>
@@ -139,9 +144,11 @@ const Testimonials = ({ items }) => (
       </div>
     </div>
 
-    {items.length ? (
+    {!request.data ? (
+      <StorefrontStatus request={request} label="Loading customer reviews…" testid="testimonials-status" />
+    ) : request.data.length ? (
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((r) => <ReviewCard key={r.id} r={r} />)}
+        {request.data.map((r) => <ReviewCard key={r.id} r={r} />)}
       </div>
     ) : (
       <div data-testid="testimonials-empty" className="rounded-3xl border-2 border-dashed border-border bg-white/60 p-10 text-center">
@@ -258,21 +265,13 @@ const BoxBuilderBanner = () => (
 );
 
 export default function Home() {
-  const store = useStore();
+  const storeRequest = useStoreRequest();
+  const store = storeRequest.data;
   const { hash } = useLocation();
-  const [cats, setCats] = useState([]);
-  const [featured, setFeatured] = useState([]);
-  const [best, setBest] = useState([]);
-  const [allProducts, setAllProducts] = useState([]);
-  const [reviews, setReviews] = useState([]);
-
-  useEffect(() => {
-    api.get("/reviews/featured").then(({ data }) => setReviews(data)).catch(() => {});
-    api.get("/catalog/categories").then(({ data }) => setCats(data)).catch(() => {});
-    api.get("/catalog/products").then(({ data }) => setAllProducts(data)).catch(() => {});
-    api.get("/catalog/products", { params: { featured: true } }).then(({ data }) => setFeatured(data)).catch(() => {});
-    api.get("/catalog/products", { params: { bestseller: true } }).then(({ data }) => setBest(data)).catch(() => {});
-  }, []);
+  const catalog = useStorefrontData("/catalog/products");
+  const categories = useStorefrontData("/catalog/categories");
+  const reviews = useStorefrontData("/reviews/featured");
+  const products = catalog.data ?? [];
 
   useEffect(() => {
     if (hash && store) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth" });
@@ -281,15 +280,24 @@ export default function Home() {
   return (
     <div data-testid="home-page">
       <Hero store={store} />
-      <AutoIceCreamSlider products={allProducts} />
+      {catalog.data ? (products.length > 0 && <AutoIceCreamSlider products={products} />) : (
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <StorefrontStatus request={catalog} label="Loading the menu…" testid="home-catalog-status" />
+        </div>
+      )}
       <FeatureShowcase />
       <ReferBanner />
       <BoxBuilderBanner />
-      {store && <Offers promotions={store.promotions} />}
-      <Categories cats={cats} />
-      <ProductRow title="Fresh this week" testid="featured-section" items={featured} />
-      <ProductRow title="Bestsellers" testid="bestsellers-section" items={best} />
-      <Testimonials items={reviews} />
+      {store ? <Offers promotions={store.promotions} /> : (
+        <section id="offers" className="mx-auto max-w-7xl scroll-mt-24 px-4 py-12 sm:px-6 lg:px-8">
+          <H2>Sweet deals</H2>
+          <StorefrontStatus request={storeRequest} label="Loading store information…" testid="home-store-status" />
+        </section>
+      )}
+      <Categories request={categories} />
+      <ProductRow title="Fresh this week" testid="featured-section" items={products.filter((p) => p.is_featured)} />
+      <ProductRow title="Bestsellers" testid="bestsellers-section" items={products.filter((p) => p.is_bestseller)} />
+      <Testimonials request={reviews} />
       {store && <Visit s={store} />}
     </div>
   );
