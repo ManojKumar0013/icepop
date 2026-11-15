@@ -1,31 +1,24 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
-import { api } from "@/lib/api";
+import { useStorefrontData } from "@/lib/useStorefrontData";
 import { ProductCard } from "@/components/site/ProductCard";
-import { PageLoader } from "@/components/site/Guards";
+import { StorefrontStatus } from "@/components/site/StorefrontStatus";
 import { useLang } from "@/context/LangContext";
 
 export default function Menu() {
   const [params, setParams] = useSearchParams();
   const category = params.get("category") || "";
-  const [cats, setCats] = useState([]);
-  const [products, setProducts] = useState(null);
   const [q, setQ] = useState("");
   const { t } = useLang();
-
-  useEffect(() => {
-    api.get("/catalog/categories").then(({ data }) => setCats(data)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    setProducts(null);
-    const t = setTimeout(() => {
-      api.get("/catalog/products", { params: { category: category || undefined, q: q || undefined } })
-        .then(({ data }) => setProducts(data)).catch(() => setProducts([]));
-    }, q ? 250 : 0);
-    return () => clearTimeout(t);
-  }, [category, q]);
+  const query = new URLSearchParams();
+  if (category) query.set("category", category);
+  if (q) query.set("q", q);
+  const search = query.toString();
+  const productsRequest = useStorefrontData(`/catalog/products${search ? `?${search}` : ""}`, { debounce: q ? 250 : 0 });
+  const categoriesRequest = useStorefrontData("/catalog/categories");
+  const cats = categoriesRequest.data ?? [];
+  const products = productsRequest.data;
 
   const pill = (active) => `shrink-0 rounded-full px-5 py-2.5 text-sm font-bold transition-colors ${active ? "bg-choco text-cream" : "bg-white border border-border hover:border-choco"}`;
 
@@ -49,7 +42,10 @@ export default function Menu() {
         ))}
       </div>
       {category && <p className="-mt-6 mb-8 text-sm text-muted-foreground">{cats.find((c) => c.slug === category)?.description}</p>}
-      {!products ? <PageLoader /> : products.length === 0 ? (
+      {!categoriesRequest.data && <div className="mb-6">
+        <StorefrontStatus request={categoriesRequest} label="Loading categories…" testid="menu-categories-status" />
+      </div>}
+      {!products ? <StorefrontStatus request={productsRequest} label="Loading the menu…" testid="menu-catalog-status" /> : products.length === 0 ? (
         <div data-testid="menu-empty" className="rounded-3xl border-2 border-dashed border-border p-12 text-center text-muted-foreground">{t("No treats match your search.")}</div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
